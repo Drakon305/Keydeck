@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -100,7 +100,9 @@ SWATCHES = ["#3a3d46", "#c0392b", "#d35400", "#f39c12", "#27ae60",
             "#16a085", "#2980b9", "#8e44ad", "#e84393", "#7f8c8d"]
 
 DEFAULT_BIND = {"label": "", "hotkey": "", "text": "", "mode": "paste",
-                "enter": False, "enabled": True, "color": TILE}
+                "enter": False, "enabled": True, "color": TILE,
+                "action": "text",  # "text" = post text, "page" = jump to another page
+                "goto": ""}        # id of the page to jump to (for action "page")
 DEFAULT_CONFIG = {
     "pages": [
         {"name": "Main", "binds": [
@@ -140,7 +142,7 @@ def load_config():
                 if not isinstance(pg, dict):
                     continue
                 binds = pg.get("binds") if isinstance(pg.get("binds"), list) else []
-                pages.append({"name": str(pg.get("name") or "Page"),
+                pages.append({"name": str(pg.get("name") or "Page"), "id": pg.get("id"),
                               "binds": [{**DEFAULT_BIND, **b} for b in binds if isinstance(b, dict)]})
             if pages:
                 cfg["pages"] = pages
@@ -185,13 +187,13 @@ def load_config():
     p["always_on_top"] = bool(p["always_on_top"])
     if not isinstance(p["toggle_hotkey"], str):
         p["toggle_hotkey"] = ""
+    seen_ids = set()
     for pg in cfg["pages"]:
-        for b in pg["binds"]:
-            if not isinstance(b.get("color"), str) or not b["color"].startswith("#") or len(b["color"]) != 7:
-                b["color"] = TILE
-            for k in ("label", "hotkey", "text"):
-                if not isinstance(b.get(k), str):
-                    b[k] = ""
+        pid = pg.get("id")
+        if not isinstance(pid, str) or not pid or pid in seen_ids:
+            pg["id"] = new_page_id()
+        seen_ids.add(pg["id"])
+        pg["binds"][:] = [clean_bind(b) for b in pg["binds"]]
     try:
         cur = int(cfg.get("current_page", 0))
     except Exception:
@@ -205,10 +207,17 @@ def load_config():
 EXPORT_FORMAT = 1
 
 
+def new_page_id():
+    import uuid
+    return uuid.uuid4().hex[:10]
+
+
 def clean_bind(b):
     """A safe, complete button from whatever a file contained."""
     b = {**DEFAULT_BIND, **{k: v for k, v in b.items() if k in DEFAULT_BIND}}
-    for k in ("label", "hotkey", "text"):
+    if b.get("action") not in ("text", "page"):
+        b["action"] = "text"
+    for k in ("label", "hotkey", "text", "goto"):
         if not isinstance(b.get(k), str):
             b[k] = ""
     if b["mode"] not in ("paste", "type"):
@@ -222,7 +231,8 @@ def clean_bind(b):
 
 def save_export_file(path, pages):
     data = {"keydeck_export": EXPORT_FORMAT, "app_version": VERSION,
-            "pages": [{"name": pg["name"], "binds": [dict(b) for b in pg["binds"]]} for pg in pages]}
+            "pages": [{"name": pg["name"], "id": pg.get("id"),
+                       "binds": [dict(b) for b in pg["binds"]]} for pg in pages]}
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
@@ -246,10 +256,27 @@ def read_export_file(path):
             continue
         binds = [clean_bind(b) for b in (pg.get("binds") or []) if isinstance(b, dict)]
         name = str(pg.get("name") or "Imported").strip()[:30] or "Imported"
-        pages.append({"name": name, "binds": binds})
+        pid = pg.get("id") if isinstance(pg.get("id"), str) and pg.get("id") else new_page_id()
+        pages.append({"name": name, "id": pid, "binds": binds})
     if not pages:
         raise ValueError("The file has no pages in it.")
     return pages
+
+
+def remap_page_ids(new_pages, taken_ids):
+    """Give imported pages fresh ids if they clash with ones you already have,
+    and point their "go to page" buttons at the new ids."""
+    mapping = {}
+    for pg in new_pages:
+        if pg["id"] in taken_ids or pg["id"] in mapping.values():
+            nid = new_page_id()
+            mapping[pg["id"]] = nid
+            pg["id"] = nid
+        taken_ids = set(taken_ids) | {pg["id"]}
+    for pg in new_pages:
+        for b in pg["binds"]:
+            if b.get("action") == "page" and b.get("goto") in mapping:
+                b["goto"] = mapping[b["goto"]]
 
 
 def unique_name(name, existing):
@@ -853,15 +880,25 @@ class Panel:
         if self.edit_mode:
             f.config(highlightbackground=ACCENT)
 
-        title = b["label"] or " ".join(b["text"].split())[:40] or "(empty)"
+        is_link = b.get("action") == "page"
+        target = self.app.page_by_id(b.get("goto")) if is_link else None
+        if is_link:
+            title = b["label"] or (target["name"] if target else "(missing page)")
+        else:
+            title = b["label"] or " ".join(b["text"].split())[:40] or "(empty)"
         name = tk.Label(f, text=title, bg=color, fg=fg, font=("Segoe UI", fs, "bold"),
                         wraplength=max(20, size - 12), justify="center", cursor="hand2")
         name.pack(expand=True, fill="both", padx=4, pady=(4, 0))
         # re-wrap the label text whenever the button gets wider or narrower
         name.bind("<Configure>", lambda e, n=name: n.config(wraplength=max(20, e.width - 8)), add="+")
         widgets = [f, name]
+        sub = []
+        if is_link:
+            sub.append("→ " + (target["name"] if target else "missing page"))
         if p["show_hotkeys"] and b["hotkey"]:
-            hk = tk.Label(f, text=pretty_hotkey(b["hotkey"]), bg=color, fg=fg,
+            sub.append(pretty_hotkey(b["hotkey"]))
+        if sub:
+            hk = tk.Label(f, text="  ".join(sub), bg=color, fg=fg,
                           font=("Consolas", max(7, fs - 3)), cursor="hand2")
             hk.pack(side="bottom", pady=(0, 4))
             widgets.append(hk)
@@ -894,6 +931,9 @@ class Panel:
             return
         b = self.app.cfg["binds"][i]
         if not b.get("enabled", True):
+            return
+        if b.get("action") == "page":
+            self.app.goto_page(b.get("goto"))
             return
         for w in widgets:  # quick flash so you know it fired
             w.config(bg=ACCENT)
@@ -928,8 +968,8 @@ class BindEditor:
 
         d = self.win = tk.Toplevel(app.root)
         d.title("Edit button" if editing else "New button")
-        d.geometry("540x540")
-        d.minsize(460, 480)
+        d.geometry("560x580")
+        d.minsize(480, 520)
         d.attributes("-topmost", True)
         d.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -977,7 +1017,7 @@ class BindEditor:
             self.swatches.append((c, s))
         self.pick_color(self.color)
 
-        ttk.Label(f, text="Page").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(f, text="Shown on page").grid(row=4, column=0, sticky="w", pady=(6, 0))
         page_names = [f'{k + 1}. {pg["name"]}' for k, pg in enumerate(app.cfg["pages"])]
         self.page_box = ttk.Combobox(f, values=page_names, state="readonly", width=24)
         self.page_box.current(app.cfg["current_page"])
@@ -985,6 +1025,23 @@ class BindEditor:
 
         opts = ttk.Frame(f)
         opts.grid(row=5, column=1, columnspan=2, sticky="w", pady=(8, 0))
+
+        # what the button does: post its text, or jump to another page
+        act = ttk.Frame(opts)
+        act.pack(anchor="w", pady=(0, 6))
+        self.action = tk.StringVar(value=b.get("action", "text"))
+        ttk.Radiobutton(act, text="Post the text", variable=self.action, value="text",
+                        command=self._action_changed).pack(side="left")
+        ttk.Radiobutton(act, text="Go to page:", variable=self.action, value="page",
+                        command=self._action_changed).pack(side="left", padx=(12, 4))
+        self._page_ids = [pg["id"] for pg in app.cfg["pages"]]
+        self.goto_box = ttk.Combobox(act, values=[pg["name"] for pg in app.cfg["pages"]],
+                                     state="readonly", width=18)
+        if b.get("goto") in self._page_ids:
+            self.goto_box.current(self._page_ids.index(b["goto"]))
+        self.goto_box.pack(side="left")
+        self.goto_box.bind("<<ComboboxSelected>>", lambda e: self.action.set("page"))
+
         self.mode = tk.StringVar(value=b["mode"])
         ttk.Radiobutton(opts, text="Paste it (fast, works almost everywhere)",
                         variable=self.mode, value="paste").pack(anchor="w")
@@ -1008,6 +1065,11 @@ class BindEditor:
         force_foreground(d)
         d.after(80, lambda: force_foreground(d) if d.winfo_exists() else None)
         (self.text if editing else self.label_entry).focus_set()
+
+    def _action_changed(self):
+        if self.action.get() == "page" and self.goto_box.current() < 0:
+            self.goto_box.focus_set()
+            self.goto_box.event_generate("<Down>")  # open the list so you can pick
 
     def preview(self):
         raw = self.text.get("1.0", "end-1c")
@@ -1035,20 +1097,30 @@ class BindEditor:
         hk = norm_hotkey(self.hotkey.get())
         text = self.text.get("1.0", "end-1c")
         err = None
-        if not text.strip():
+        action = self.action.get()
+        goto = ""
+        if action == "page":
+            k = self.goto_box.current()
+            if k < 0:
+                err = "Pick which page this button should go to."
+            else:
+                goto = self._page_ids[k]
+        elif not text.strip():
             err = "Type the text this button should post."
-        elif hk and not valid_hotkey(hk):
-            err = f'"{hk}" isn\'t a valid hotkey. Try Record, or leave it blank.'
-        elif hk:
-            clash = self.app.find_conflict(hk, skip_index=self.index)
-            if clash:
-                err = f"{pretty_hotkey(hk)} is already used by {clash}."
+        if not err and hk:
+            if not valid_hotkey(hk):
+                err = f'"{hk}" isn\'t a valid hotkey. Try Record, or leave it blank.'
+            else:
+                clash = self.app.find_conflict(hk, skip_index=self.index)
+                if clash:
+                    err = f"{pretty_hotkey(hk)} is already used by {clash}."
         if err:
             messagebox.showerror(APP_NAME, err, parent=self.win)
             return
         data = {"label": self.label.get().strip(), "hotkey": hk, "text": text,
                 "mode": self.mode.get(), "enter": self.enter.get(),
-                "enabled": self.enabled.get(), "color": self.color}
+                "enabled": self.enabled.get(), "color": self.color,
+                "action": action, "goto": goto}
         cur = self.app.cfg["current_page"]
         target = self.page_box.current()
         if target < 0:
@@ -1480,6 +1552,9 @@ class App:
         if now - self._last_fire.get(b["hotkey"], 0) < 0.35:
             return
         self._last_fire[b["hotkey"]] = now
+        if b.get("action") == "page":
+            self.ui(self.goto_page, b.get("goto"), True)
+            return
         self.post(b)
 
     def post(self, b, from_click=False):
@@ -1565,6 +1640,21 @@ class App:
         self.editor = BindEditor(self, index)
 
     # pages
+    def page_by_id(self, pid):
+        return next((pg for pg in self.cfg["pages"] if pg.get("id") == pid), None) if pid else None
+
+    def goto_page(self, pid, from_hotkey=False):
+        """What a "go to page" button does."""
+        k = next((k for k, pg in enumerate(self.cfg["pages"]) if pg.get("id") == pid), None)
+        if k is None:
+            if not from_hotkey:
+                messagebox.showinfo(APP_NAME, "The page this button goes to was deleted.\n"
+                                    "Right-click the button to pick another page.", parent=self.root)
+            return
+        if from_hotkey:
+            self.panel.show()
+        self.switch_page(k)
+
     def _set_page(self, k):
         k = max(0, min(len(self.cfg["pages"]) - 1, k))
         self.cfg["current_page"] = k
@@ -1588,7 +1678,7 @@ class App:
             return
         if self.editor:
             self.editor.close()
-        self.cfg["pages"].append({"name": name, "binds": []})
+        self.cfg["pages"].append({"name": name, "id": new_page_id(), "binds": []})
         self._set_page(len(self.cfg["pages"]) - 1)
         self.apply()
 
@@ -1683,6 +1773,7 @@ class App:
         if self.editor:
             self.editor.close()
         if choice:  # add
+            remap_page_ids(new_pages, {pg["id"] for pg in self.cfg["pages"]})
             existing = [pg["name"] for pg in self.cfg["pages"]]
             for pg in new_pages:
                 pg["name"] = unique_name(pg["name"], existing)
@@ -1843,6 +1934,10 @@ def selftest():
         os.remove(tmp)
         assert back[0]["name"] == "Test" and back[0]["binds"][0]["text"] == "hi"
         assert unique_name("Main", ["Main", "Main (2)"]) == "Main (3)"
+        pgs = [{"name": "A", "id": "same", "binds": [{**DEFAULT_BIND, "action": "page", "goto": "same"}]}]
+        remap_page_ids(pgs, {"same"})
+        assert pgs[0]["id"] != "same" and pgs[0]["binds"][0]["goto"] == pgs[0]["id"]
+        assert clean_bind({"action": "weird"})["action"] == "text"
     except Exception:
         problems.append("backup/share: " + traceback.format_exc())
     try:
