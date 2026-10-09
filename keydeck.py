@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -343,6 +343,52 @@ def expand_text(text, clip=None):
             clip = read_clipboard()
         text = _CLIP_RE.sub(lambda m: clip, text)
     return text
+
+
+_STEP_RE = re.compile(r"\{\s*(enter|wait\s*:?\s*(\d+(?:\.\d+)?))\s*\}", re.IGNORECASE)
+
+
+def plan_text(text, clip=None):
+    """Turn a button's text into steps to perform, in order:
+        ("text", "...")   paste/type this
+        ("enter",)        press Enter          <- {enter}
+        ("wait", 1.5)     pause this many sec  <- {wait 1.5}
+    Random picks are resolved first; {clipboard} is filled in last, so copied
+    text is never treated as a command."""
+    for _ in range(20):
+        new = _RANDOM_RE.sub(lambda m: random.choice(m.group(1).split("|")), text)
+        if new == text:
+            break
+        text = new
+    if clip is None and _CLIP_RE.search(text):
+        clip = read_clipboard()
+    steps, pos = [], 0
+    for m in _STEP_RE.finditer(text):
+        chunk = text[pos:m.start()]
+        if chunk:
+            steps.append(("text", _CLIP_RE.sub(lambda _: clip or "", chunk)))
+        if m.group(1).lower().startswith("enter"):
+            steps.append(("enter",))
+        else:
+            steps.append(("wait", min(30.0, float(m.group(2)))))
+        pos = m.end()
+    chunk = text[pos:]
+    if chunk:
+        steps.append(("text", _CLIP_RE.sub(lambda _: clip or "", chunk)))
+    return steps
+
+
+def describe_plan(steps):
+    """Readable preview of what a button will do."""
+    out = []
+    for st in steps:
+        if st[0] == "text":
+            out.append(st[1])
+        elif st[0] == "enter":
+            out.append(" [Enter]\n")
+        else:
+            out.append(f"[wait {st[1]:g}s]")
+    return "".join(out)
 
 
 def valid_hotkey(hk):
@@ -1001,7 +1047,7 @@ class BindEditor:
         tip = ttk.Frame(tf)
         tip.pack(fill="x", pady=(3, 0))
         ttk.Label(tip, foreground="#666666", font=("Segoe UI", 8),
-                  text="{a|b|c} = random pick     {clipboard} = what you last copied"
+                  text="{a|b|c} random   {clipboard} last copied   {enter} press Enter   {wait 1} pause"
                   ).pack(side="left")
         ttk.Button(tip, text="Preview", command=self.preview).pack(side="right")
 
@@ -1073,7 +1119,7 @@ class BindEditor:
 
     def preview(self):
         raw = self.text.get("1.0", "end-1c")
-        samples = "\n\n".join(f"{n}) {expand_text(raw)}" for n in range(1, 4))
+        samples = "\n\n".join(f"{n}) {describe_plan(plan_text(raw))}" for n in range(1, 4))
         messagebox.showinfo(APP_NAME, f"Three sample results:\n\n{samples}", parent=self.win)
 
     def pick_color(self, c):
@@ -1569,11 +1615,18 @@ class App:
                     log("No window to type into yet; click into a text box first.")
                     continue
                 self._wait_for_modifiers()
-                text = expand_text(b["text"])
-                if b.get("mode") == "type":
-                    keyboard.write(text, delay=0.003)
-                else:
-                    self._paste(text)
+                for step in plan_text(b["text"]):
+                    if step[0] == "text":
+                        if b.get("mode") == "type":
+                            keyboard.write(step[1], delay=0.003)
+                        else:
+                            self._paste(step[1])
+                    elif step[0] == "enter":
+                        time.sleep(0.06)
+                        keyboard.send("enter")
+                        time.sleep(0.15)  # give chats a moment to send before the next part
+                    else:
+                        time.sleep(step[1])
                 if b.get("enter"):
                     time.sleep(0.06)
                     keyboard.send("enter")
@@ -1938,6 +1991,9 @@ def selftest():
         remap_page_ids(pgs, {"same"})
         assert pgs[0]["id"] != "same" and pgs[0]["binds"][0]["goto"] == pgs[0]["id"]
         assert clean_bind({"action": "weird"})["action"] == "text"
+        assert plan_text("hi{enter}/tp {clipboard}{Enter}", clip="Bob{enter}") == [
+            ("text", "hi"), ("enter",), ("text", "/tp Bob{enter}"), ("enter",)]
+        assert plan_text("a{wait 1.5}b") == [("text", "a"), ("wait", 1.5), ("text", "b")]
     except Exception:
         problems.append("backup/share: " + traceback.format_exc())
     try:

@@ -22,6 +22,8 @@ KeyDeck checks for updates when it opens and offers to install new versions itse
 - Text commands:
   - `{hello|hey|what's up}` — picks one at random each time
   - `{clipboard}` — whatever you last copied (e.g. `/tp {clipboard}`)
+  - `{enter}` — presses Enter right there, so one button can send several messages (`Hello!{enter}Welcome in!{enter}`)
+  - `{wait 2}` — pauses that many seconds before continuing
 - **Backup & share**: Settings → Export buttons… saves a `.keydeck` file; Import buttons… loads one (add alongside yours, or replace). Right-click a tab to export just that page.
 - Settings → **Uninstall** removes it cleanly
 
