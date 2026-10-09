@@ -1,0 +1,44 @@
+# The "go live" button.
+# GitHub > Actions > "Release beta to everyone" > Run workflow.
+# Takes the newest beta (or the version you type) and releases it to everyone:
+# every copy of KeyDeck will then offer that update when it opens.
+
+name: Release beta to everyone
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (leave blank for the newest beta)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release to everyone
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          WANTED: ${{ github.event.inputs.version }}
+        run: |
+          set -e
+          if [ -n "$WANTED" ]; then
+            TAG="v${WANTED#v}"
+          else
+            TAG=$(gh api "repos/$REPO/releases?per_page=30" \
+                  --jq '[.[] | select(.prerelease and (.draft | not))][0].tag_name // ""')
+          fi
+          if [ -z "$TAG" ]; then
+            echo "There's no beta waiting to be released."
+            echo "### Nothing to release - there's no beta waiting." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          ID=$(gh api "repos/$REPO/releases/tags/$TAG" --jq .id)
+          gh api -X PATCH "repos/$REPO/releases/$ID" -F prerelease=false -f make_latest=true > /dev/null
+          echo "Released $TAG to everyone."
+          echo "### KeyDeck $TAG is now live for everyone" >> "$GITHUB_STEP_SUMMARY"

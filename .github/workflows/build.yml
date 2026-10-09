@@ -1,6 +1,7 @@
 # Builds KeyDeck.exe on a real Windows machine every time the code changes.
-# When VERSION in keydeck.py is a new number, it also publishes a GitHub Release,
-# and every installed copy of KeyDeck offers to update itself to it.
+# When VERSION in keydeck.py is a new number, it also publishes it as a BETA
+# (GitHub pre-release): only copies with "Tester" ticked in Settings get it.
+# Run the "Release beta to everyone" workflow to send it to everybody.
 
 name: Build KeyDeck
 
@@ -82,5 +83,8 @@ jobs:
             exit 0
           }
           $notes = if ($env:NOTES) { $env:NOTES } else { "KeyDeck $tag" }
-          gh release create $tag "dist/KeyDeck.exe" --title "KeyDeck $tag" --notes "$notes"
-          Write-Host "Published $tag"
+          # New versions go to testers first (pre-release). Run the
+          # "Release beta to everyone" workflow to send it to everybody.
+          gh release create $tag "dist/KeyDeck.exe" --title "KeyDeck $tag" --notes "$notes" --prerelease
+          Write-Host "Published $tag as a BETA (testers only)"
+          "### KeyDeck $tag is out for testers`nWhen it looks good, run **Release beta to everyone** in the Actions tab." >> $env:GITHUB_STEP_SUMMARY

@@ -29,8 +29,14 @@ KeyDeck checks for updates when it opens and offers to install new versions itse
 - **Backup & share**: Settings → Export buttons… saves a `.keydeck` file; Import buttons… loads one (add alongside yours, or replace). Right-click a tab to export just that page.
 - Settings → **Uninstall** removes it cleanly
 
+## Testing updates before everyone gets them
+
+New versions are published as a **beta** first. Only copies with **Settings → Tester: get new versions early (beta)** ticked are offered them.
+
+When a beta looks good: **Actions → Release beta to everyone → Run workflow**. Everyone's KeyDeck then offers the update the next time it opens.
+
 ## For the developer
 
 - `keydeck.py` is the whole app.
-- To release: bump `VERSION` in `keydeck.py` and push to `main`. The **Build KeyDeck** GitHub Action builds and self-tests `KeyDeck.exe` on Windows, then publishes it as a release.
+- To release: bump `VERSION` in `keydeck.py` and push to `main`. The **Build KeyDeck** GitHub Action builds and self-tests `KeyDeck.exe` on Windows, then publishes it as a beta (pre-release).
 - `run_debug.bat` runs the source with a visible console for troubleshooting.

@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -125,6 +125,7 @@ DEFAULT_CONFIG = {
         "show_hotkeys": True,
         "always_on_top": True,
         "toggle_hotkey": "ctrl+alt+p",
+        "beta": False,  # True = get test versions before everyone else
     },
 }
 
@@ -185,6 +186,7 @@ def load_config():
     num("font_size", 7, 24)
     p["show_hotkeys"] = bool(p["show_hotkeys"])
     p["always_on_top"] = bool(p["always_on_top"])
+    p["beta"] = bool(p["beta"])
     if not isinstance(p["toggle_hotkey"], str):
         p["toggle_hotkey"] = ""
     seen_ids = set()
@@ -562,13 +564,28 @@ def _http_get(url, timeout=15):
     return urllib.request.urlopen(req, timeout=timeout)
 
 
-def fetch_latest_release():
-    """(tag, exe_download_url, notes) for the newest published release."""
-    with _http_get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest") as r:
-        data = json.load(r)
-    asset = next((a for a in data.get("assets", [])
+def _exe_url(release):
+    asset = next((a for a in release.get("assets", [])
                   if str(a.get("name", "")).lower() == "keydeck.exe"), None)
-    return data.get("tag_name", ""), (asset or {}).get("browser_download_url"), data.get("body") or ""
+    return (asset or {}).get("browser_download_url")
+
+
+def fetch_latest_release(beta=False):
+    """(tag, exe_download_url, notes, is_beta) for the newest version this copy should get.
+
+    Everyone gets the newest normal release. Testers (beta=True) also get
+    versions still marked "pre-release" on GitHub, i.e. not released to everyone yet."""
+    if not beta:
+        with _http_get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest") as r:
+            data = json.load(r)
+        return data.get("tag_name", ""), _exe_url(data), data.get("body") or "", False
+    with _http_get(f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=20") as r:
+        releases = json.load(r)
+    usable = [x for x in releases if not x.get("draft") and _exe_url(x)]
+    if not usable:
+        return "", None, "", False
+    best = max(usable, key=lambda x: version_tuple(x.get("tag_name", "")))
+    return best.get("tag_name", ""), _exe_url(best), best.get("body") or "", bool(best.get("prerelease"))
 
 
 def download_update(url):
@@ -1222,7 +1239,7 @@ class SettingsWindow:
         p = app.cfg["panel"]
         w = self.win = tk.Toplevel(app.root)
         w.title(f"{APP_NAME} Settings")
-        w.geometry("480x520")
+        w.geometry("480x550")
         w.attributes("-topmost", True)
         w.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -1268,6 +1285,10 @@ class SettingsWindow:
         self.startup = tk.BooleanVar(value=get_startup())
         ttk.Checkbutton(f, text="Start KeyDeck with Windows", variable=self.startup,
                         command=self.toggle_startup).grid(row=r, column=0, columnspan=2, sticky="w")
+        r += 1
+        self.beta = tk.BooleanVar(value=p["beta"])
+        ttk.Checkbutton(f, text="Tester: get new versions early (beta)", variable=self.beta,
+                        command=self.toggle_beta).grid(row=r, column=0, columnspan=2, sticky="w")
         r += 1
         errs = app.hotkey_errors
         ttk.Label(f, foreground="#c0392b", wraplength=430, justify="left",
@@ -1337,6 +1358,12 @@ class SettingsWindow:
         except Exception:
             pass
         self.app.quit()
+
+    def toggle_beta(self):
+        self.app.cfg["panel"]["beta"] = self.beta.get()
+        save_config(self.app.cfg)
+        if self.beta.get():
+            self.app.check_for_updates(manual=True)
 
     def toggle_startup(self):
         try:
@@ -1445,8 +1472,8 @@ class App:
 
         def worker():
             try:
-                tag, url, notes = fetch_latest_release()
-                self.ui(self._offer_update, tag, url, notes, manual)
+                tag, url, notes, is_beta = fetch_latest_release(beta=self.cfg["panel"]["beta"])
+                self.ui(self._offer_update, tag, url, notes, manual, is_beta)
             except Exception as e:
                 log(f"Update check failed: {e}")
                 if manual:
@@ -1455,7 +1482,7 @@ class App:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _offer_update(self, tag, url, notes, manual):
+    def _offer_update(self, tag, url, notes, manual, is_beta=False):
         if not tag or version_tuple(tag) <= version_tuple(VERSION):
             log(f"Up to date (v{VERSION}, latest {tag or 'none'})")
             if manual:
@@ -1470,7 +1497,8 @@ class App:
         notes = (notes or "").strip()
         if len(notes) > 600:
             notes = notes[:600] + "…"
-        msg = f"KeyDeck {new} is available (you have {VERSION})."
+        msg = f"KeyDeck {new}{' (beta - not released to everyone yet)' if is_beta else ''} " \
+              f"is available (you have {VERSION})."
         if notes:
             msg += f"\n\nWhat's new:\n{notes}"
         msg += "\n\nUpdate now? It takes a few seconds and keeps all your buttons."
