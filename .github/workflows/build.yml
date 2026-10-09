@@ -1,0 +1,86 @@
+# Builds KeyDeck.exe on a real Windows machine every time the code changes.
+# When VERSION in keydeck.py is a new number, it also publishes a GitHub Release,
+# and every installed copy of KeyDeck offers to update itself to it.
+
+name: Build KeyDeck
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-keydeck
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install libraries
+        run: python -m pip install --upgrade keyboard pystray pillow pyperclip pyinstaller
+
+      - name: Read version
+        id: ver
+        shell: pwsh
+        run: |
+          $m = Select-String -Path keydeck.py -Pattern '^VERSION = "([0-9.]+)"'
+          if (-not $m) { Write-Error "VERSION line not found in keydeck.py"; exit 1 }
+          $v = $m.Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "KeyDeck version $v"
+
+      - name: Test the source
+        shell: pwsh
+        run: |
+          python -m py_compile keydeck.py
+          python keydeck.py --selftest
+          $code = $LASTEXITCODE
+          Get-Content "$env:APPDATA\KeyDeck\startup.log" -ErrorAction SilentlyContinue
+          if ($code -ne 0) { exit 1 }
+
+      - name: Build KeyDeck.exe
+        run: >
+          python -m PyInstaller --onefile --noconsole --noconfirm --clean
+          --name KeyDeck
+          --hidden-import pystray._win32 --hidden-import PIL.ImageTk
+          keydeck.py
+
+      - name: Test the built .exe
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist\KeyDeck.exe" -ArgumentList "--selftest" -Wait -PassThru
+          Get-Content "$env:APPDATA\KeyDeck\startup.log" -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { Write-Error "Built exe failed its self-test"; exit 1 }
+          Write-Host "Built exe passed its self-test"
+
+      - name: Keep a copy of this build
+        uses: actions/upload-artifact@v4
+        with:
+          name: KeyDeck-${{ steps.ver.outputs.version }}
+          path: dist/KeyDeck.exe
+
+      - name: Publish release (only when VERSION is new)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ github.event.head_commit.message }}
+        run: |
+          $tag = "v${{ steps.ver.outputs.version }}"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists - nothing to publish."
+            exit 0
+          }
+          $notes = if ($env:NOTES) { $env:NOTES } else { "KeyDeck $tag" }
+          gh release create $tag "dist/KeyDeck.exe" --title "KeyDeck $tag" --notes "$notes"
+          Write-Host "Published $tag"
