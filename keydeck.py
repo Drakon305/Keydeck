@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -75,7 +75,7 @@ log(f"KeyDeck v{VERSION} starting. Python {sys.version.split()[0]}, frozen={geta
 
 try:
     import tkinter as tk
-    from tkinter import ttk, messagebox, simpledialog
+    from tkinter import ttk, messagebox, simpledialog, filedialog
     import keyboard
     import pyperclip
     import pystray
@@ -200,6 +200,65 @@ def load_config():
     # cfg["binds"] always points at the list of buttons on the page you're looking at
     cfg["binds"] = cfg["pages"][cfg["current_page"]]["binds"]
     return cfg
+
+
+EXPORT_FORMAT = 1
+
+
+def clean_bind(b):
+    """A safe, complete button from whatever a file contained."""
+    b = {**DEFAULT_BIND, **{k: v for k, v in b.items() if k in DEFAULT_BIND}}
+    for k in ("label", "hotkey", "text"):
+        if not isinstance(b.get(k), str):
+            b[k] = ""
+    if b["mode"] not in ("paste", "type"):
+        b["mode"] = "paste"
+    b["enter"] = bool(b["enter"])
+    b["enabled"] = bool(b["enabled"])
+    if not isinstance(b.get("color"), str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", b["color"]):
+        b["color"] = TILE
+    return b
+
+
+def save_export_file(path, pages):
+    data = {"keydeck_export": EXPORT_FORMAT, "app_version": VERSION,
+            "pages": [{"name": pg["name"], "binds": [dict(b) for b in pg["binds"]]} for pg in pages]}
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def read_export_file(path):
+    """Pages from a .keydeck export, a KeyDeck config.json, or an old single-page file."""
+    with open(path, "r", encoding="utf-8-sig") as f:
+        data = json.load(f)
+    raw = None
+    if isinstance(data, dict) and isinstance(data.get("pages"), list):
+        raw = data["pages"]
+    elif isinstance(data, dict) and isinstance(data.get("binds"), list):
+        raw = [{"name": "Imported", "binds": data["binds"]}]
+    if raw is None:
+        raise ValueError("No KeyDeck pages found in this file.")
+    pages = []
+    for pg in raw:
+        if not isinstance(pg, dict):
+            continue
+        binds = [clean_bind(b) for b in (pg.get("binds") or []) if isinstance(b, dict)]
+        name = str(pg.get("name") or "Imported").strip()[:30] or "Imported"
+        pages.append({"name": name, "binds": binds})
+    if not pages:
+        raise ValueError("The file has no pages in it.")
+    return pages
+
+
+def unique_name(name, existing):
+    if name not in existing:
+        return name
+    n = 2
+    while f"{name} ({n})" in existing:
+        n += 1
+    return f"{name} ({n})"
 
 
 def save_config(cfg):
@@ -729,6 +788,8 @@ class Panel:
         n = len(self.app.cfg["pages"])
         m = tk.Menu(self.win, tearoff=0)
         m.add_command(label="Rename page", command=lambda: self.app.rename_page(k))
+        m.add_command(label="Export this page…", command=lambda: self.app.export_pages([k]))
+        m.add_command(label="Import buttons…", command=lambda: self.app.import_pages())
         m.add_command(label="Move left", command=lambda: self.app.move_page(k, -1),
                       state="normal" if k > 0 else "disabled")
         m.add_command(label="Move right", command=lambda: self.app.move_page(k, 1),
@@ -1037,7 +1098,7 @@ class SettingsWindow:
         p = app.cfg["panel"]
         w = self.win = tk.Toplevel(app.root)
         w.title(f"{APP_NAME} Settings")
-        w.geometry("470x470")
+        w.geometry("480x520")
         w.attributes("-topmost", True)
         w.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -1100,6 +1161,13 @@ class SettingsWindow:
         ttk.Label(upd, text=f"Version {VERSION}").pack(side="left")
         ttk.Button(upd, text="Check for updates",
                    command=lambda: app.check_for_updates(manual=True)).pack(side="left", padx=(8, 0))
+        bk = ttk.Frame(f)
+        bk.grid(row=r + 3, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ttk.Label(bk, text="Backup & share:").pack(side="left")
+        ttk.Button(bk, text="Export buttons…", command=lambda: app.export_pages(parent=w)
+                   ).pack(side="left", padx=(8, 0))
+        ttk.Button(bk, text="Import buttons…", command=lambda: app.import_pages(parent=w)
+                   ).pack(side="left", padx=(6, 0))
         self._orig_layout = (p["columns"], p["tile"])
         ttk.Button(bb, text="Close", command=self.close).pack(side="right")
         ttk.Button(bb, text="Save", command=self.save).pack(side="right", padx=(0, 6))
@@ -1557,6 +1625,100 @@ class App:
         self._set_page(i if i is not None else min(k, len(pages) - 1))
         self.apply()
 
+    # ---- backup & share -----------------------------------------------------
+    def export_pages(self, page_indexes=None, parent=None):
+        """Save pages (all of them, or just some) to a .keydeck file."""
+        parent = parent or self.root
+        pages = self.cfg["pages"]
+        chosen = [pages[k] for k in (page_indexes if page_indexes is not None else range(len(pages)))]
+        default = (chosen[0]["name"] if len(chosen) == 1 else "My KeyDeck buttons")
+        default = re.sub(r'[\\/:*?"<>|]+', "", default).strip() or "KeyDeck buttons"
+        path = filedialog.asksaveasfilename(
+            parent=parent, title="Save your KeyDeck buttons",
+            initialdir=os.path.join(os.path.expanduser("~"), "Documents"),
+            initialfile=f"{default}.keydeck", defaultextension=".keydeck",
+            filetypes=[("KeyDeck buttons", "*.keydeck"), ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            save_export_file(path, chosen)
+        except Exception as e:
+            messagebox.showerror(APP_NAME, f"Couldn't save the file.\n\n{e}", parent=parent)
+            return
+        n = sum(len(pg["binds"]) for pg in chosen)
+        messagebox.showinfo(
+            APP_NAME, f"Saved {n} button(s) on {len(chosen)} page(s) to:\n{path}\n\n"
+            "Keep it as a backup, or send it to a friend - they can load it with "
+            "Settings > Import buttons.", parent=parent)
+
+    def import_pages(self, parent=None):
+        """Load pages from a .keydeck file (or a KeyDeck config.json)."""
+        parent = parent or self.root
+        path = filedialog.askopenfilename(
+            parent=parent, title="Open KeyDeck buttons",
+            initialdir=os.path.join(os.path.expanduser("~"), "Documents"),
+            filetypes=[("KeyDeck buttons", "*.keydeck *.json"), ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            new_pages = read_export_file(path)
+        except Exception as e:
+            messagebox.showerror(APP_NAME, f"That file couldn't be read as KeyDeck buttons.\n\n{e}",
+                                 parent=parent)
+            return
+        n = sum(len(pg["binds"]) for pg in new_pages)
+        choice = messagebox.askyesnocancel(
+            APP_NAME,
+            f"This file has {n} button(s) on {len(new_pages)} page(s):\n"
+            + "\n".join(f"  • {pg['name']} ({len(pg['binds'])})" for pg in new_pages[:12])
+            + "\n\nYes = ADD these pages next to your current ones\n"
+              "No = REPLACE all your current buttons with these\n"
+              "Cancel = do nothing", parent=parent)
+        if choice is None:
+            return
+        if choice is False and not messagebox.askyesno(
+                APP_NAME, "Replace ALL your current buttons? This can't be undone.\n\n"
+                "(Tip: Export your buttons first if you might want them back.)", parent=parent):
+            return
+        if self.editor:
+            self.editor.close()
+        if choice:  # add
+            existing = [pg["name"] for pg in self.cfg["pages"]]
+            for pg in new_pages:
+                pg["name"] = unique_name(pg["name"], existing)
+                existing.append(pg["name"])
+            first_new = len(self.cfg["pages"])
+            self.cfg["pages"].extend(new_pages)
+        else:  # replace
+            self.cfg["pages"][:] = new_pages
+            first_new = 0
+        cleared = self._clear_hotkey_clashes(new_pages)
+        self._set_page(first_new)
+        self.apply()
+        msg = f"Imported {n} button(s)."
+        if cleared:
+            msg += (f"\n\n{cleared} hotkey(s) were removed because you already use those keys. "
+                    "Right-click a button to give it a new one.")
+        messagebox.showinfo(APP_NAME, msg, parent=parent)
+
+    def _clear_hotkey_clashes(self, new_pages):
+        """Imported buttons lose any hotkey that's already taken."""
+        new_ids = {id(b) for pg in new_pages for b in pg["binds"]}
+        taken = {norm_hotkey(self.cfg["panel"].get("toggle_hotkey"))}
+        for _, _, b in self.all_binds():
+            if id(b) not in new_ids and b.get("hotkey"):
+                taken.add(norm_hotkey(b["hotkey"]))
+        cleared = 0
+        for pg in new_pages:
+            for b in pg["binds"]:
+                hk = norm_hotkey(b.get("hotkey"))
+                if hk and (hk in taken or not valid_hotkey(hk)):
+                    b["hotkey"] = ""
+                    cleared += 1
+                elif hk:
+                    taken.add(hk)
+        return cleared
+
     def open_settings(self):
         if self.settings and self.settings.win.winfo_exists():
             force_foreground(self.settings.win)
@@ -1673,6 +1835,16 @@ def selftest():
         assert cfg["pages"] and cfg["pages"][0]["binds"]
     except Exception:
         problems.append("config: " + traceback.format_exc())
+    try:
+        import tempfile
+        tmp = os.path.join(tempfile.gettempdir(), "keydeck_selftest.keydeck")
+        save_export_file(tmp, [{"name": "Test", "binds": [{**DEFAULT_BIND, "label": "x", "text": "hi"}]}])
+        back = read_export_file(tmp)
+        os.remove(tmp)
+        assert back[0]["name"] == "Test" and back[0]["binds"][0]["text"] == "hi"
+        assert unique_name("Main", ["Main", "Main (2)"]) == "Main (3)"
+    except Exception:
+        problems.append("backup/share: " + traceback.format_exc())
     try:
         r = tk.Tk()
         r.withdraw()
