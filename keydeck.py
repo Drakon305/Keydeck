@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -345,7 +345,8 @@ def expand_text(text, clip=None):
     return text
 
 
-_STEP_RE = re.compile(r"\{\s*(enter|wait\s*:?\s*(\d+(?:\.\d+)?))\s*\}", re.IGNORECASE)
+# {enter} {tab} {wait 2} - round brackets work too: (enter) (tab) (wait 2)
+_STEP_RE = re.compile(r"[{(]\s*(enter|tab|wait\s*:?\s*(\d+(?:\.\d+)?))\s*[})]", re.IGNORECASE)
 
 
 def plan_text(text, clip=None):
@@ -367,8 +368,11 @@ def plan_text(text, clip=None):
         chunk = text[pos:m.start()]
         if chunk:
             steps.append(("text", _CLIP_RE.sub(lambda _: clip or "", chunk)))
-        if m.group(1).lower().startswith("enter"):
+        word = m.group(1).lower()
+        if word.startswith("enter"):
             steps.append(("enter",))
+        elif word.startswith("tab"):
+            steps.append(("tab",))
         else:
             steps.append(("wait", min(30.0, float(m.group(2)))))
         pos = m.end()
@@ -386,6 +390,8 @@ def describe_plan(steps):
             out.append(st[1])
         elif st[0] == "enter":
             out.append(" [Enter]\n")
+        elif st[0] == "tab":
+            out.append(" [Tab] ")
         else:
             out.append(f"[wait {st[1]:g}s]")
     return "".join(out)
@@ -1047,7 +1053,7 @@ class BindEditor:
         tip = ttk.Frame(tf)
         tip.pack(fill="x", pady=(3, 0))
         ttk.Label(tip, foreground="#666666", font=("Segoe UI", 8),
-                  text="{a|b|c} random   {clipboard} last copied   {enter} press Enter   {wait 1} pause"
+                  text="{a|b} random  {clipboard} copied  {enter} Enter  {tab} Tab  {wait 1} pause"
                   ).pack(side="left")
         ttk.Button(tip, text="Preview", command=self.preview).pack(side="right")
 
@@ -1621,10 +1627,10 @@ class App:
                             keyboard.write(step[1], delay=0.003)
                         else:
                             self._paste(step[1])
-                    elif step[0] == "enter":
+                    elif step[0] in ("enter", "tab"):
                         time.sleep(0.06)
-                        keyboard.send("enter")
-                        time.sleep(0.15)  # give chats a moment to send before the next part
+                        keyboard.send(step[0])
+                        time.sleep(0.15)  # give the app a moment before the next part
                     else:
                         time.sleep(step[1])
                 if b.get("enter"):
@@ -1994,6 +2000,7 @@ def selftest():
         assert plan_text("hi{enter}/tp {clipboard}{Enter}", clip="Bob{enter}") == [
             ("text", "hi"), ("enter",), ("text", "/tp Bob{enter}"), ("enter",)]
         assert plan_text("a{wait 1.5}b") == [("text", "a"), ("wait", 1.5), ("text", "b")]
+        assert plan_text("/x(tab)y (enter)") == [("text", "/x"), ("tab",), ("text", "y "), ("enter",)]
     except Exception:
         problems.append("backup/share: " + traceback.format_exc())
     try:
