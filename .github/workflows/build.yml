@@ -30,6 +30,19 @@ jobs:
       - name: Install libraries
         run: python -m pip install --upgrade keyboard pystray pillow pyperclip pyinstaller
 
+      - name: Add the submit-only key
+        # Comes from the repository secret KEYDECK_SUBMIT_TOKEN, so it is never in the code.
+        # That key can only create Library submissions (issues); it can't change anything.
+        shell: python
+        env:
+          SUBMIT_TOKEN: ${{ secrets.KEYDECK_SUBMIT_TOKEN }}
+        run: |
+          import os, base64
+          t = os.environ.get("SUBMIT_TOKEN", "").strip()
+          with open("keydeck_secrets.py", "w") as f:
+              f.write("SUBMIT_KEY = %r\n" % base64.b64encode(t.encode()[::-1]).decode())
+          print("Submit key included:", bool(t))
+
       - name: Read version
         id: ver
         shell: pwsh
@@ -53,7 +66,7 @@ jobs:
         run: >
           python -m PyInstaller --onefile --noconsole --noconfirm --clean
           --name KeyDeck
-          --hidden-import pystray._win32 --hidden-import PIL.ImageTk
+          --hidden-import pystray._win32 --hidden-import PIL.ImageTk --hidden-import keydeck_secrets
           keydeck.py
 
       - name: Test the built .exe

@@ -108,7 +108,7 @@ Click **📦 Library** to see ready-made button sets.
 - If a hotkey in the set is one you already use, it's left off the new button (you keep yours).
 - **Update** appears when a set you added has been improved. Updating replaces only that set's page, so edits you made to that page are lost; your other pages are untouched.
 
-**Want your buttons in the Library?** Build them on their own page → right-click the tab → **Export this page…** → send the file to Drakon on Discord.
+**Want your buttons in the Library?** Build them on their own page → right-click the tab → **Submit to Library…** → fill in a name and what it's for → **Send**. Drakon gets it for approval; once approved, it shows up in everyone's Library.
 
 ---
 
@@ -165,5 +165,6 @@ KeyDeck checks for a new version a few seconds after it opens. If there is one, 
 - **Getting changes:** ask Claude. Each change is built and tested on Windows automatically and published as a **beta**.
 - **Testing a beta:** tick **Settings → Tester** on your KeyDeck, reopen it, accept the update.
 - **Releasing to everyone:** GitHub → **Actions** → **Release beta to everyone** → **Run workflow**.
-- **Adding a Library set:** GitHub → `packs` folder → **Add file → Upload files** → upload the `.keydeck` file. Upload a file with the same name to update it; delete the file to remove it from the Library.
+- **Library admin:** Settings → **Library admin key…** → paste your admin key (once). The Library window then shows **📥 Submissions** at the top: **Try it** (adds a test copy to your KeyDeck), **Preview**, **Approve** (goes live in everyone's Library right away) or **Reject**. Approving a set with the same name as an existing one replaces it, and people who added it get an **Update** button.
+- **Adding a set yourself:** submit it like anyone else and approve it, or upload the `.keydeck` file to the `packs` folder on GitHub. Delete a file from `packs` to remove it from the Library.
 - **Download link to share:** https://github.com/Drakon305/Keydeck/releases/latest/download/KeyDeck.exe

@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.7.0"
+VERSION = "1.8.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -126,6 +126,8 @@ DEFAULT_CONFIG = {
         "always_on_top": True,
         "toggle_hotkey": "ctrl+alt+p",
         "beta": False,  # True = get test versions before everyone else
+        "submitter": "",  # name shown on Library submissions
+        "admin_token": "",  # Library admin key (only on the admin's PC)
     },
 }
 
@@ -189,6 +191,9 @@ def load_config():
     p["show_hotkeys"] = bool(p["show_hotkeys"])
     p["always_on_top"] = bool(p["always_on_top"])
     p["beta"] = bool(p["beta"])
+    for key in ("submitter", "admin_token"):
+        if not isinstance(p.get(key), str):
+            p[key] = ""
     if not isinstance(p["toggle_hotkey"], str):
         p["toggle_hotkey"] = ""
     seen_ids = set()
@@ -247,6 +252,19 @@ def read_export_file(path):
     """Pages from a .keydeck export, a KeyDeck config.json, or an old single-page file."""
     with open(path, "r", encoding="utf-8-sig") as f:
         data = json.load(f)
+    return pages_from_data(data)
+
+
+def pages_to_data(pages, description=""):
+    data = {"keydeck_export": EXPORT_FORMAT, "app_version": VERSION,
+            "pages": [{"name": pg["name"], "id": pg.get("id"),
+                       "binds": [dict(b) for b in pg["binds"]]} for pg in pages]}
+    if description:
+        data["description"] = description
+    return data
+
+
+def pages_from_data(data):
     raw = None
     if isinstance(data, dict) and isinstance(data.get("pages"), list):
         raw = data["pages"]
@@ -309,6 +327,137 @@ def download_pack(pack):
     for pg in pages:
         pg["pack"], pg["pack_sha"] = pack["key"], pack["sha"]
     return pages, (desc if isinstance(desc, str) else "")
+
+
+# ---- library submissions ---------------------------------------------------
+# Mods send a page to the Library with "Submit to Library". It arrives as a
+# GitHub issue in the repo. The admin approves it from inside KeyDeck, which
+# saves it into the packs folder so it appears in everyone's Library.
+
+SUBMISSION_TAG = "[KeyDeck submission]"
+
+try:  # written by the GitHub build from a repository secret; not in the source code
+    from keydeck_secrets import SUBMIT_KEY as _SUBMIT_KEY
+except Exception:
+    _SUBMIT_KEY = ""
+
+
+def submit_token():
+    """The submit-only key built into this copy (can only create submissions)."""
+    import base64
+    try:
+        return base64.b64decode(_SUBMIT_KEY.encode())[::-1].decode() if _SUBMIT_KEY else ""
+    except Exception:
+        return ""
+
+
+def github_api(method, path, token=None, body=None, timeout=20):
+    import urllib.request
+    import urllib.error
+    url = path if path.startswith("http") else f"https://api.github.com{path}"
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method, headers={
+        "User-Agent": f"KeyDeck/{VERSION}", "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"})
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read()
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = json.loads(e.read()).get("message", "")
+        except Exception:
+            pass
+        raise RuntimeError(f"GitHub said {e.code}: {detail or e.reason}") from None
+
+
+def safe_pack_filename(name):
+    clean = re.sub(r"[^\w \-().']+", "", name or "").strip()[:50]
+    return (clean or "Button set") + ".keydeck"
+
+
+def make_submission(name, submitter, description, pages):
+    """(title, body) of the issue that carries a submission."""
+    payload = json.dumps(pages_to_data(pages, description), ensure_ascii=False, separators=(",", ":"))
+    n = sum(len(pg["binds"]) for pg in pages)
+    body = (f"**Set name:** {name}\n**Submitted by:** {submitter or 'someone'}\n**Buttons:** {n}\n\n"
+            f"{description}\n\n"
+            "Approve or reject this from KeyDeck (Library window, admin only).\n\n"
+            f"<!-- KeyDeck data - do not edit below this line -->\n```keydeck\n{payload}\n```\n")
+    if len(body) > 60000:
+        raise ValueError("That page is too big to submit. Try splitting it into two pages.")
+    return f"{SUBMISSION_TAG} {name}", body
+
+
+def parse_submission(issue):
+    title = issue.get("title") or ""
+    body = issue.get("body") or ""
+    m = re.search(r"```keydeck\n(.*?)\n```", body, re.S)
+    if not title.startswith(SUBMISSION_TAG) or not m:
+        raise ValueError("not a KeyDeck submission")
+    data = json.loads(m.group(1))
+    who = re.search(r"\*\*Submitted by:\*\* *(.+)", body)
+    return {"number": issue.get("number"), "url": issue.get("html_url", ""),
+            "name": title[len(SUBMISSION_TAG):].strip() or "Untitled set",
+            "submitter": who.group(1).strip() if who else "someone",
+            "description": data.get("description", "") if isinstance(data.get("description"), str) else "",
+            "pages": pages_from_data(data)}
+
+
+def submit_to_library(name, submitter, description, pages):
+    token = submit_token()
+    if not token:
+        raise RuntimeError("Submissions aren't set up in this copy of KeyDeck yet.")
+    title, body = make_submission(name, submitter, description, pages)
+    return github_api("POST", f"/repos/{GITHUB_REPO}/issues", token, {"title": title, "body": body})
+
+
+def check_admin_token(token):
+    data = github_api("GET", f"/repos/{GITHUB_REPO}", token)
+    return bool((data.get("permissions") or {}).get("push"))
+
+
+def list_submissions(token):
+    issues = github_api("GET", f"/repos/{GITHUB_REPO}/issues?state=open&per_page=50", token)
+    subs = []
+    for it in issues if isinstance(issues, list) else []:
+        if it.get("pull_request") or not str(it.get("title", "")).startswith(SUBMISSION_TAG):
+            continue
+        try:
+            subs.append(parse_submission(it))
+        except Exception as e:
+            log(f"Skipped unreadable submission #{it.get('number')}: {e}")
+    return subs
+
+
+def _close_issue(token, number, comment, reason):
+    github_api("POST", f"/repos/{GITHUB_REPO}/issues/{number}/comments", token, {"body": comment})
+    github_api("PATCH", f"/repos/{GITHUB_REPO}/issues/{number}", token,
+               {"state": "closed", "state_reason": reason})
+
+
+def approve_submission(token, sub, filename, existing_sha=None):
+    """Publish a submission into the packs folder, then close its issue."""
+    import base64
+    import urllib.parse
+    content = json.dumps(pages_to_data(sub["pages"], sub["description"]), indent=2, ensure_ascii=False)
+    body = {"message": f"Library: add {filename} (from {sub['submitter']})",
+            "content": base64.b64encode(content.encode("utf-8")).decode()}
+    if existing_sha:
+        body["sha"] = existing_sha
+    path = urllib.parse.quote(f"{LIBRARY_DIR}/{filename}")
+    github_api("PUT", f"/repos/{GITHUB_REPO}/contents/{path}", token, body)
+    _close_issue(token, sub["number"], f"Approved and added to the Library as **{filename}**. Thanks!",
+                 "completed")
+
+
+def reject_submission(token, sub):
+    _close_issue(token, sub["number"], "Not added to the Library this time.", "not_planned")
 
 
 def remap_page_ids(new_pages, taken_ids):
@@ -932,6 +1081,7 @@ class Panel:
         m = tk.Menu(self.win, tearoff=0)
         m.add_command(label="Rename page", command=lambda: self.app.rename_page(k))
         m.add_command(label="Export this page…", command=lambda: self.app.export_pages([k]))
+        m.add_command(label="Submit to Library…", command=lambda: self.app.submit_page(k))
         m.add_command(label="Import buttons…", command=lambda: self.app.import_pages())
         m.add_command(label="Move left", command=lambda: self.app.move_page(k, -1),
                       state="normal" if k > 0 else "disabled")
@@ -1286,7 +1436,7 @@ class SettingsWindow:
         p = app.cfg["panel"]
         w = self.win = tk.Toplevel(app.root)
         w.title(f"{APP_NAME} Settings")
-        w.geometry("480x550")
+        w.geometry("480x590")
         w.attributes("-topmost", True)
         w.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -1336,6 +1486,12 @@ class SettingsWindow:
         self.beta = tk.BooleanVar(value=p["beta"])
         ttk.Checkbutton(f, text="Tester: get new versions early (beta)", variable=self.beta,
                         command=self.toggle_beta).grid(row=r, column=0, columnspan=2, sticky="w")
+        r += 1
+        adm = ttk.Frame(f)
+        adm.grid(row=r, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.admin_label = ttk.Label(adm, text=self._admin_text())
+        self.admin_label.pack(side="left")
+        ttk.Button(adm, text="Library admin key…", command=self.set_admin).pack(side="left", padx=(8, 0))
         r += 1
         errs = app.hotkey_errors
         ttk.Label(f, foreground="#c0392b", wraplength=430, justify="left",
@@ -1406,6 +1562,13 @@ class SettingsWindow:
             pass
         self.app.quit()
 
+    def _admin_text(self):
+        return "Library admin: ON" if self.app.cfg["panel"]["admin_token"] else "Library admin: off"
+
+    def set_admin(self):
+        self.app.set_admin_key(parent=self.win, then=lambda: self.admin_label.winfo_exists()
+                               and self.admin_label.config(text=self._admin_text()))
+
     def toggle_beta(self):
         self.app.cfg["panel"]["beta"] = self.beta.get()
         save_config(self.app.cfg)
@@ -1462,6 +1625,83 @@ class SettingsWindow:
         except tk.TclError:
             pass
 
+
+
+class SubmitDialog:
+    """Send one page to the Library admin for approval."""
+    _last_sent = 0.0
+
+    def __init__(self, app, page):
+        self.app, self.page = app, page
+        d = self.win = tk.Toplevel(app.root)
+        d.title("Submit to Library")
+        d.geometry("440x360")
+        d.attributes("-topmost", True)
+        f = ttk.Frame(d, padding=12)
+        f.pack(fill="both", expand=True)
+        f.columnconfigure(1, weight=1)
+        f.rowconfigure(3, weight=1)
+        n = len(page["binds"])
+        ttk.Label(f, wraplength=410, justify="left",
+                  text=f'Send the page "{page["name"]}" ({n} buttons) to the Library admin. '
+                       "If it's approved, everyone can add it from their Library."
+                  ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ttk.Label(f, text="Set name").grid(row=1, column=0, sticky="w")
+        self.name = tk.StringVar(value=page["name"])
+        ttk.Entry(f, textvariable=self.name).grid(row=1, column=1, sticky="ew", pady=3)
+        ttk.Label(f, text="Your name").grid(row=2, column=0, sticky="w", padx=(0, 8))
+        self.who = tk.StringVar(value=app.cfg["panel"]["submitter"])
+        self.who_entry = ttk.Entry(f, textvariable=self.who)
+        self.who_entry.grid(row=2, column=1, sticky="ew", pady=3)
+        ttk.Label(f, text="What it's for").grid(row=3, column=0, sticky="nw", pady=3)
+        self.desc = tk.Text(f, height=5, wrap="word", font=("Segoe UI", 10))
+        self.desc.grid(row=3, column=1, sticky="nsew", pady=3)
+        bb = ttk.Frame(f)
+        bb.grid(row=4, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        ttk.Button(bb, text="Cancel", command=d.destroy).pack(side="right")
+        self.send_btn = ttk.Button(bb, text="Send", command=self.send)
+        self.send_btn.pack(side="right", padx=(0, 6))
+        force_foreground(d)
+        (self.who_entry if not self.who.get() else self.desc).focus_set()
+
+    def send(self):
+        name = self.name.get().strip()[:40]
+        who = self.who.get().strip()[:40]
+        desc = self.desc.get("1.0", "end-1c").strip()[:1000]
+        if not name or not who:
+            messagebox.showerror(APP_NAME, "Fill in the set name and your name.", parent=self.win)
+            return
+        if time.time() - SubmitDialog._last_sent < 30:
+            messagebox.showinfo(APP_NAME, "You just sent one - wait a few seconds before sending another.",
+                                parent=self.win)
+            return
+        self.app.cfg["panel"]["submitter"] = who
+        save_config(self.app.cfg)
+        self.send_btn.config(state="disabled", text="Sending…")
+        page = {"name": self.page["name"], "id": self.page.get("id"),
+                "binds": [dict(b) for b in self.page["binds"]]}
+
+        def worker():
+            try:
+                submit_to_library(name, who, desc, [page])
+                err = None
+            except Exception as e:
+                err = str(e)
+
+            def done():
+                if not self.win.winfo_exists():
+                    return
+                if err:
+                    self.send_btn.config(state="normal", text="Send")
+                    messagebox.showerror(APP_NAME, f"Couldn't send it.\n\n{err}", parent=self.win)
+                    return
+                SubmitDialog._last_sent = time.time()
+                messagebox.showinfo(APP_NAME, f'Sent! "{name}" is waiting for the Library admin to approve it.',
+                                    parent=self.win)
+                self.win.destroy()
+            self.app.ui(done)
+
+        threading.Thread(target=worker, daemon=True).start()
 
 
 # ---------------------------------------------------------------- library ---
@@ -1524,15 +1764,23 @@ class LibraryWindow:
     def load(self):
         self._message("Loading the library…")
 
+        token = self.app.cfg["panel"]["admin_token"]
+
         def worker():
+            subs, sub_err = None, None
+            if token:
+                try:
+                    subs = list_submissions(token)
+                except Exception as e:
+                    sub_err = str(e)
             try:
                 packs = fetch_library()
-                self.app.ui(self._show, packs, None)
+                err = None
             except Exception as e:
-                msg = str(e)
-                if "404" in msg:
-                    msg = "The library is empty right now."
-                self.app.ui(self._show, [], msg)
+                packs, err = [], str(e)
+                if "404" in err:
+                    err = None  # no packs folder yet = empty library
+            self.app.ui(self._show, packs, err, subs, sub_err)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1542,18 +1790,28 @@ class LibraryWindow:
             return "new"
         return "added" if all(pg.get("pack_sha") == pack["sha"] for pg in mine) else "update"
 
-    def _show(self, packs, error):
+    def _section(self, text):
+        tk.Label(self.list, text=text, bg="#ffffff", fg="#333333", anchor="w",
+                 font=("Segoe UI", 9, "bold"), pady=6).pack(fill="x")
+
+    def _show(self, packs, error, subs=None, sub_err=None):
         if not self.win.winfo_exists():
             return
         self.packs = packs
-        if error:
-            self._message(f"Couldn't load the library.\n\n{error}")
-            return
-        if not packs:
-            self._message("The library is empty right now.")
-            return
+        self._subs = subs
         for c in self.list.winfo_children():
             c.destroy()
+        if self.app.cfg["panel"]["admin_token"]:
+            self._show_submissions(subs, sub_err)
+            self._section("LIBRARY")
+        if error:
+            tk.Label(self.list, text=f"Couldn't load the library.\n\n{error}", bg="#ffffff",
+                     fg="#555555", wraplength=480, justify="left", pady=10).pack(anchor="w")
+            return
+        if not packs:
+            tk.Label(self.list, text="The library is empty right now.", bg="#ffffff",
+                     fg="#555555", pady=10).pack(anchor="w")
+            return
         for pack in packs:
             row = tk.Frame(self.list, bg="#ffffff", pady=8)
             row.pack(fill="x")
@@ -1616,8 +1874,102 @@ class LibraryWindow:
                 msg += (f"\n\n{cleared} hotkey(s) were left off because you already use those keys. "
                         "Right-click a button to give it a new one.")
             messagebox.showinfo(APP_NAME, msg, parent=self.win)
-            self._show(self.packs, None)
+            self._show(self.packs, None, getattr(self, "_subs", None))
         self._download(pack, done)
+
+    # ---- admin: submissions ----
+    def _show_submissions(self, subs, err):
+        n = len(subs) if subs else 0
+        self._section(f"📥 SUBMISSIONS WAITING FOR YOU ({n})")
+        if err:
+            tk.Label(self.list, text=f"Couldn't load submissions: {err}", bg="#ffffff", fg="#c0392b",
+                     wraplength=480, justify="left").pack(anchor="w")
+        elif not subs:
+            tk.Label(self.list, text="Nothing waiting.", bg="#ffffff", fg="#777777").pack(anchor="w")
+        for sub in subs or []:
+            row = tk.Frame(self.list, bg="#fff8ec", pady=6, padx=6)
+            row.pack(fill="x", pady=2)
+            info = tk.Frame(row, bg="#fff8ec")
+            info.pack(side="left", fill="x", expand=True)
+            nb = sum(len(pg["binds"]) for pg in sub["pages"])
+            tk.Label(info, text=sub["name"], bg="#fff8ec", font=("Segoe UI", 10, "bold"),
+                     anchor="w").pack(anchor="w")
+            tk.Label(info, text=f"from {sub['submitter']} - {nb} buttons", bg="#fff8ec", fg="#777777",
+                     font=("Segoe UI", 8), anchor="w").pack(anchor="w")
+            ttk.Button(row, text="Reject", command=lambda sb=sub: self.reject(sb)).pack(side="right", padx=2)
+            ttk.Button(row, text="Approve", command=lambda sb=sub: self.approve(sb)).pack(side="right", padx=2)
+            ttk.Button(row, text="Preview", command=lambda sb=sub: self._preview_pages(
+                sb["name"], sb["pages"], f"From {sb['submitter']}\n{sb['description']}")).pack(side="right", padx=2)
+            ttk.Button(row, text="Try it", command=lambda sb=sub: self.try_submission(sb)).pack(side="right", padx=2)
+
+    def _preview_pages(self, title, pages, desc):
+        lines = [desc.strip(), ""] if desc and desc.strip() else []
+        for pg in pages:
+            lines.append(f"Page: {pg['name']}")
+            for b in pg["binds"][:30]:
+                label = b["label"] or "(no name)"
+                what = ("-> go to page" if b.get("action") == "page"
+                        else " ".join(b["text"].split())[:70])
+                lines.append(f"   • {label}:  {what}")
+            if len(pg["binds"]) > 30:
+                lines.append(f"   …and {len(pg['binds']) - 30} more")
+        messagebox.showinfo(title, "\n".join(lines), parent=self.win)
+
+    def try_submission(self, sub):
+        """Add a copy to your own KeyDeck to test it before approving."""
+        pages = json.loads(json.dumps(sub["pages"]))
+        for pg in pages:
+            pg["name"] = f"TEST {pg['name']}"[:30]
+        n, _ = self.app.install_pack(pages)
+        messagebox.showinfo(APP_NAME, f"Added a test copy ({n} buttons) as a new page so you can try it. "
+                            "Delete that page when you're done (right-click its tab).", parent=self.win)
+
+    def approve(self, sub):
+        token = self.app.cfg["panel"]["admin_token"]
+        filename = safe_pack_filename(sub["name"])
+        existing = next((pk for pk in self.packs if pk["key"].lower() == filename.lower()), None)
+        msg = f'Publish "{sub["name"]}" from {sub["submitter"]} to everyone\'s Library?'
+        if existing:
+            msg += (f'\n\nA set called "{existing["name"]}" is already in the Library. It will be '
+                    "REPLACED, and everyone who added it will be offered an Update.")
+        if not messagebox.askyesno(APP_NAME, msg, parent=self.win):
+            return
+
+        def worker():
+            try:
+                approve_submission(token, sub, existing["key"] if existing else filename,
+                                   existing["sha"] if existing else None)
+                err = None
+            except Exception as e:
+                err = str(e)
+
+            def done():
+                if err:
+                    messagebox.showerror(APP_NAME, f"Couldn't publish it.\n\n{err}", parent=self.win)
+                else:
+                    messagebox.showinfo(APP_NAME, f'"{sub["name"]}" is now in everyone\'s Library.',
+                                        parent=self.win)
+                self.load()
+            self.app.ui(done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def reject(self, sub):
+        if not messagebox.askyesno(APP_NAME, f'Reject "{sub["name"]}" from {sub["submitter"]}?',
+                                   parent=self.win):
+            return
+        token = self.app.cfg["panel"]["admin_token"]
+
+        def worker():
+            try:
+                reject_submission(token, sub)
+                err = None
+            except Exception as e:
+                err = str(e)
+            self.app.ui(lambda: (messagebox.showerror(APP_NAME, f"Couldn't reject it.\n\n{err}",
+                                                      parent=self.win) if err else None, self.load()))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def close(self):
         if self.app.library is self:
@@ -2091,6 +2443,58 @@ class App:
                     "Right-click a button to give it a new one.")
         messagebox.showinfo(APP_NAME, msg, parent=parent)
 
+    # ---- library submissions -------------------------------------------------
+    def submit_page(self, k):
+        pg = self.cfg["pages"][k]
+        if not pg["binds"]:
+            messagebox.showinfo(APP_NAME, "That page has no buttons to submit yet.", parent=self.root)
+            return
+        if not submit_token():
+            messagebox.showinfo(
+                APP_NAME, "Submitting isn't switched on in this copy yet.\n\nFor now: right-click the tab > "
+                "Export this page..., and send the file to the Library admin.", parent=self.root)
+            return
+        SubmitDialog(self, pg)
+
+    def set_admin_key(self, parent=None, then=None):
+        parent = parent or self.root
+        cur = self.cfg["panel"]["admin_token"]
+        key = simpledialog.askstring(
+            APP_NAME, "Paste your Library admin key (leave empty to turn admin off).\n\n"
+            "Keep this key private - it stays only on this PC.",
+            parent=parent, show="*", initialvalue="")
+        if key is None:
+            return
+        key = key.strip()
+        if not key:
+            if cur and messagebox.askyesno(APP_NAME, "Turn Library admin off on this PC?", parent=parent):
+                self.cfg["panel"]["admin_token"] = ""
+                save_config(self.cfg)
+            if then:
+                then()
+            return
+
+        def worker():
+            try:
+                ok = check_admin_token(key)
+                err = None if ok else "That key works, but it doesn't have permission to change the Library."
+            except Exception as e:
+                ok, err = False, str(e)
+
+            def done():
+                if ok:
+                    self.cfg["panel"]["admin_token"] = key
+                    save_config(self.cfg)
+                    messagebox.showinfo(APP_NAME, "Library admin is ON. Open the Library to see submissions.",
+                                        parent=parent)
+                else:
+                    messagebox.showerror(APP_NAME, f"That key didn't work.\n\n{err}", parent=parent)
+                if then:
+                    then()
+            self.ui(done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
     # ---- button library -----------------------------------------------------
     def open_library(self):
         if self.library and self.library.win.winfo_exists():
@@ -2274,6 +2678,12 @@ def selftest():
         remap_page_ids(pgs, {"same"})
         assert pgs[0]["id"] != "same" and pgs[0]["binds"][0]["goto"] == pgs[0]["id"]
         assert clean_bind({"action": "weird"})["action"] == "text"
+        pg = [{"name": "Mod set", "id": "x1", "binds": [{**DEFAULT_BIND, "label": "hi", "text": "yo {enter}"}]}]
+        t, body = make_submission("Mod set", "Tester", "for tickets", pg)
+        sub = parse_submission({"title": t, "body": body, "number": 7})
+        assert sub["name"] == "Mod set" and sub["submitter"] == "Tester" and sub["description"] == "for tickets"
+        assert sub["pages"][0]["binds"][0]["text"] == "yo {enter}"
+        assert safe_pack_filename('a/b:c*"d') == "abcd.keydeck"
         assert plan_text("hi{enter}/tp {clipboard}{Enter}", clip="Bob{enter}") == [
             ("text", "hi"), ("enter",), ("text", "/tp Bob{enter}"), ("enter",)]
         assert plan_text("a{wait 1.5}b") == [("text", "a"), ("wait", 1.5), ("text", "b")]

@@ -4,3 +4,4 @@ build/
 dist/
 *.spec
 KeyDeck.exe
+keydeck_secrets.py
