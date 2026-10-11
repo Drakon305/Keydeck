@@ -12,6 +12,8 @@ Double-click it and it installs itself (Desktop + Start Menu shortcuts) and open
 
 KeyDeck checks for updates when it opens and offers to install new versions itself, keeping all your buttons. You can also use **Settings → Check for updates**.
 
+**📖 New here? Read the [User Guide](GUIDE.md)** — everything KeyDeck can do, step by step.
+
 ## Features
 
 - Grid of colored buttons, resizable window, always-on-top option
