@@ -29,6 +29,12 @@ KeyDeck checks for updates when it opens and offers to install new versions itse
 - **Backup & share**: Settings → Export buttons… saves a `.keydeck` file; Import buttons… loads one (add alongside yours, or replace). Right-click a tab to export just that page.
 - Settings → **Uninstall** removes it cleanly
 
+## Button Library
+
+Click **📦 Library** in KeyDeck to browse ready-made button sets and add the ones you want as new pages. Your own buttons are never changed, and if a set is improved later, the Library shows an **Update** button.
+
+**Adding a set to the library:** build the buttons on their own page in KeyDeck, right-click the tab → **Export this page…**, then upload the `.keydeck` file into the [`packs`](packs) folder on GitHub (open the folder → **Add file → Upload files**). It shows up in everyone's Library right away. Upload a file with the same name to update it.
+
 ## Testing updates before everyone gets them
 
 New versions are published as a **beta** first. Only copies with **Settings → Tester: get new versions early (beta)** ticked are offered them.

@@ -1,0 +1,35 @@
+{
+  "keydeck_export": 1,
+  "app_version": "1.7.0",
+  "description": "Example /reply buttons for the ticket bot. Right-click a button to change the category or response to match your bot.",
+  "pages": [
+    {
+      "name": "Ticket replies",
+      "id": "d1b03395d3",
+      "binds": [
+        {
+          "label": "Raid not spawning",
+          "hotkey": "",
+          "text": "/reply{wait 1}{tab}General Support{wait 1.5}{tab}Raid Not Spawning{wait 2}{tab}{wait 0.5}{enter}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#c0392b",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "TEMPLATE - edit me",
+          "hotkey": "",
+          "text": "/reply{wait 1}{tab}CATEGORY{wait 1.5}{tab}RESPONSE{wait 2}{tab}{wait 0.5}{enter}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#3a3d46",
+          "action": "text",
+          "goto": ""
+        }
+      ]
+    }
+  ]
+}

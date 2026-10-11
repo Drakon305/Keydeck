@@ -1,0 +1,68 @@
+{
+  "keydeck_export": 1,
+  "app_version": "1.7.0",
+  "description": "Friendly hellos and goodbyes. Each button picks a random wording every time.",
+  "pages": [
+    {
+      "name": "Greetings",
+      "id": "c34f1742c4",
+      "binds": [
+        {
+          "label": "Hello",
+          "hotkey": "",
+          "text": "{Hello!|Hey there!|Hi, welcome in!|What's up!|Howdy!|Hey hey!|Good to see you!|Hiya!|Welcome, friend!}",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#2980b9",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "Welcome",
+          "hotkey": "",
+          "text": "Hello{, welcome in! Glad you made it.| and welcome! Make yourself at home.|! Great to have you here.|, welcome aboard! Pull up a chair.| there, welcome! Hope you enjoy your stay.}",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#27ae60",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "Thanks",
+          "hotkey": "",
+          "text": "{Thanks so much!|Appreciate it!|Thank you!|Thanks, that helps a lot!}",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#16a085",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "One moment",
+          "hotkey": "",
+          "text": "{Give me one moment please.|One sec, looking into it now.|Hang tight, checking on that for you.}",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#f39c12",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "Goodbye",
+          "hotkey": "",
+          "text": "{Take care!|Have a good one!|See you around!|Thanks for stopping by, take care!}",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#8e44ad",
+          "action": "text",
+          "goto": ""
+        }
+      ]
+    }
+  ]
+}

@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -144,6 +144,8 @@ def load_config():
                     continue
                 binds = pg.get("binds") if isinstance(pg.get("binds"), list) else []
                 pages.append({"name": str(pg.get("name") or "Page"), "id": pg.get("id"),
+                              "pack": pg.get("pack") if isinstance(pg.get("pack"), str) else None,
+                              "pack_sha": pg.get("pack_sha") if isinstance(pg.get("pack_sha"), str) else None,
                               "binds": [{**DEFAULT_BIND, **b} for b in binds if isinstance(b, dict)]})
             if pages:
                 cfg["pages"] = pages
@@ -263,6 +265,50 @@ def read_export_file(path):
     if not pages:
         raise ValueError("The file has no pages in it.")
     return pages
+
+
+# ---- button library -------------------------------------------------------
+# Ready-made button sets live in the "packs" folder of the GitHub repo.
+# Each .keydeck file there (made with "Export this page") is one pack.
+
+LIBRARY_DIR = "packs"
+
+
+def fetch_library():
+    """[{key, name, sha, url}] for every pack in the repo's packs folder."""
+    with _http_get(f"https://api.github.com/repos/{GITHUB_REPO}/contents/{LIBRARY_DIR}") as r:
+        items = json.load(r)
+    packs = []
+    for it in items if isinstance(items, list) else []:
+        name = str(it.get("name", ""))
+        if it.get("type") == "file" and name.lower().endswith(".keydeck") and it.get("download_url"):
+            packs.append({"key": name, "name": name[:-len(".keydeck")],
+                          "sha": it.get("sha", ""), "url": it["download_url"]})
+    return sorted(packs, key=lambda x: x["name"].lower())
+
+
+def download_pack(pack):
+    """The pages inside one library pack, tagged with where they came from."""
+    import tempfile
+    with _http_get(pack["url"]) as r:
+        raw = r.read()
+    if len(raw) > 2_000_000:
+        raise ValueError("That pack is too big.")
+    tmp = os.path.join(tempfile.gettempdir(), "keydeck_pack.keydeck")
+    with open(tmp, "wb") as f:
+        f.write(raw)
+    try:
+        pages = read_export_file(tmp)
+        with open(tmp, "r", encoding="utf-8-sig") as f:
+            desc = json.load(f).get("description", "")
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+    for pg in pages:
+        pg["pack"], pg["pack_sha"] = pack["key"], pack["sha"]
+    return pages, (desc if isinstance(desc, str) else "")
 
 
 def remap_page_ids(new_pages, taken_ids):
@@ -770,6 +816,7 @@ class Panel:
         self.btn_edit = self._bar_btn(bar, "✎ Edit buttons", self.toggle_edit)
         self.btn_edit.pack(side="left")
         self._bar_btn(bar, "+ Add", lambda: app.edit_bind(None)).pack(side="left")
+        self._bar_btn(bar, "📦 Library", app.open_library).pack(side="left")
         self._bar_btn(bar, "⚙ Settings", app.open_settings).pack(side="right")
 
         # page tabs
@@ -1416,6 +1463,170 @@ class SettingsWindow:
             pass
 
 
+
+# ---------------------------------------------------------------- library ---
+
+class LibraryWindow:
+    """Browse the shared button packs and add the ones you want."""
+
+    def __init__(self, app):
+        self.app = app
+        w = self.win = tk.Toplevel(app.root)
+        w.title("KeyDeck Button Library")
+        w.geometry("560x460")
+        w.minsize(420, 300)
+        w.attributes("-topmost", True)
+        w.protocol("WM_DELETE_WINDOW", self.close)
+
+        top = ttk.Frame(w, padding=(12, 12, 12, 4))
+        top.pack(fill="x")
+        ttk.Label(top, text="Ready-made button sets", font=("Segoe UI", 11, "bold")).pack(anchor="w")
+        ttk.Label(top, foreground="#555555", wraplength=520, justify="left",
+                  text="Add any set as a new page. Your own buttons are never changed. "
+                       "If a set gets improved later, you'll see an Update button here.").pack(anchor="w")
+
+        # scrollable list
+        holder = ttk.Frame(w, padding=(12, 4, 12, 4))
+        holder.pack(fill="both", expand=True)
+        self.canvas = tk.Canvas(holder, highlightthickness=0, bg="#ffffff")
+        sb = ttk.Scrollbar(holder, orient="vertical", command=self.canvas.yview)
+        self.list = tk.Frame(self.canvas, bg="#ffffff")
+        self.list.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self._win_id = self.canvas.create_window((0, 0), window=self.list, anchor="nw")
+        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._win_id, width=e.width))
+        self.canvas.configure(yscrollcommand=sb.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        self.canvas.bind_all("<MouseWheel>", self._wheel, add="+")
+
+        bottom = ttk.Frame(w, padding=(12, 4, 12, 12))
+        bottom.pack(fill="x")
+        ttk.Button(bottom, text="Refresh", command=self.load).pack(side="left")
+        ttk.Button(bottom, text="Close", command=self.close).pack(side="right")
+
+        self.packs = []
+        self.load()
+        force_foreground(w)
+
+    def _wheel(self, e):
+        try:
+            if self.win.winfo_exists() and str(e.widget).startswith(str(self.win)):
+                self.canvas.yview_scroll(-1 if e.delta > 0 else 1, "units")
+        except tk.TclError:
+            pass
+
+    def _message(self, text):
+        for c in self.list.winfo_children():
+            c.destroy()
+        tk.Label(self.list, text=text, bg="#ffffff", fg="#555555", wraplength=480,
+                 justify="left", pady=20).pack(anchor="w")
+
+    def load(self):
+        self._message("Loading the library…")
+
+        def worker():
+            try:
+                packs = fetch_library()
+                self.app.ui(self._show, packs, None)
+            except Exception as e:
+                msg = str(e)
+                if "404" in msg:
+                    msg = "The library is empty right now."
+                self.app.ui(self._show, [], msg)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _status(self, pack):
+        mine = [pg for pg in self.app.cfg["pages"] if pg.get("pack") == pack["key"]]
+        if not mine:
+            return "new"
+        return "added" if all(pg.get("pack_sha") == pack["sha"] for pg in mine) else "update"
+
+    def _show(self, packs, error):
+        if not self.win.winfo_exists():
+            return
+        self.packs = packs
+        if error:
+            self._message(f"Couldn't load the library.\n\n{error}")
+            return
+        if not packs:
+            self._message("The library is empty right now.")
+            return
+        for c in self.list.winfo_children():
+            c.destroy()
+        for pack in packs:
+            row = tk.Frame(self.list, bg="#ffffff", pady=8)
+            row.pack(fill="x")
+            tk.Frame(self.list, bg="#e5e5e5", height=1).pack(fill="x")
+            info = tk.Frame(row, bg="#ffffff")
+            info.pack(side="left", fill="x", expand=True)
+            tk.Label(info, text=pack["name"], bg="#ffffff", font=("Segoe UI", 10, "bold"),
+                     anchor="w").pack(anchor="w")
+            status = self._status(pack)
+            note = {"new": "", "added": "Added - you have the latest version",
+                    "update": "An updated version is available"}[status]
+            if note:
+                tk.Label(info, text=note, bg="#ffffff", anchor="w",
+                         fg="#27ae60" if status == "added" else "#d35400",
+                         font=("Segoe UI", 8)).pack(anchor="w")
+            label = {"new": "Add", "added": "Add again", "update": "Update"}[status]
+            ttk.Button(row, text=label,
+                       command=lambda pk=pack, st=status: self.add(pk, st)).pack(side="right", padx=4)
+            ttk.Button(row, text="Preview",
+                       command=lambda pk=pack: self.preview(pk)).pack(side="right")
+
+    def _download(self, pack, then):
+        def worker():
+            try:
+                pages, desc = download_pack(pack)
+                self.app.ui(then, pages, desc)
+            except Exception as e:
+                self.app.ui(lambda: messagebox.showerror(
+                    APP_NAME, f"Couldn't download that set.\n\n{e}", parent=self.win))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def preview(self, pack):
+        def show(pages, desc):
+            lines = [desc.strip(), ""] if desc and desc.strip() else []
+            for pg in pages:
+                lines.append(f"Page: {pg['name']}")
+                for b in pg["binds"][:25]:
+                    title = b["label"] or " ".join(b["text"].split())[:40] or "(empty)"
+                    lines.append(f"   • {title}" + (f"   [{pretty_hotkey(b['hotkey'])}]" if b["hotkey"] else ""))
+                if len(pg["binds"]) > 25:
+                    lines.append(f"   …and {len(pg['binds']) - 25} more")
+            messagebox.showinfo(pack["name"], "\n".join(lines), parent=self.win)
+        self._download(pack, show)
+
+    def add(self, pack, status):
+        def done(pages, desc):
+            mode = "update" if status == "update" else "add"
+            if status == "added" and not messagebox.askyesno(
+                    APP_NAME, f'You already have "{pack["name"]}". Add another copy?', parent=self.win):
+                return
+            if mode == "update" and not messagebox.askyesno(
+                    APP_NAME, f'Update "{pack["name"]}" to the newest version?\n\n'
+                    "Its page(s) will be replaced with the new version. Changes you made "
+                    "to those pages will be lost - your other pages aren't touched.",
+                    parent=self.win):
+                return
+            n, cleared = self.app.install_pack(pages, replace_key=pack["key"] if mode == "update" else None)
+            msg = f'{"Updated" if mode == "update" else "Added"} "{pack["name"]}" ({n} buttons).'
+            if cleared:
+                msg += (f"\n\n{cleared} hotkey(s) were left off because you already use those keys. "
+                        "Right-click a button to give it a new one.")
+            messagebox.showinfo(APP_NAME, msg, parent=self.win)
+            self._show(self.packs, None)
+        self._download(pack, done)
+
+    def close(self):
+        if self.app.library is self:
+            self.app.library = None
+        try:
+            self.win.destroy()
+        except tk.TclError:
+            pass
+
 # -------------------------------------------------------------------- app ---
 
 def _index_of(items, obj):
@@ -1436,6 +1647,7 @@ class App:
         self._last_fire = {}
         self.settings = None
         self.editor = None
+        self.library = None
         self.last_target = None  # last outside window you were typing in
         self.tray = None
 
@@ -1878,6 +2090,43 @@ class App:
             msg += (f"\n\n{cleared} hotkey(s) were removed because you already use those keys. "
                     "Right-click a button to give it a new one.")
         messagebox.showinfo(APP_NAME, msg, parent=parent)
+
+    # ---- button library -----------------------------------------------------
+    def open_library(self):
+        if self.library and self.library.win.winfo_exists():
+            force_foreground(self.library.win)
+            return
+        self.library = LibraryWindow(self)
+
+    def install_pack(self, new_pages, replace_key=None):
+        """Add library pages, or swap in a newer version of pages from the same pack.
+        Returns (number of buttons, number of hotkeys left off)."""
+        if self.editor:
+            self.editor.close()
+        pages = self.cfg["pages"]
+        cur_page = pages[self.cfg["current_page"]]
+        insert_at = len(pages)
+        if replace_key:
+            old = [k for k, pg in enumerate(pages) if pg.get("pack") == replace_key]
+            if old:
+                insert_at = old[0]
+                # keep "go to page" buttons elsewhere pointing at the updated page
+                old_ids = [pages[k]["id"] for k in old]
+                for k in reversed(old):
+                    del pages[k]
+                for pg, oid in zip(new_pages, old_ids):
+                    pg["id"] = oid
+        remap_page_ids(new_pages, {pg["id"] for pg in pages})
+        existing = [pg["name"] for pg in pages]
+        for pg in new_pages:
+            pg["name"] = unique_name(pg["name"], existing)
+            existing.append(pg["name"])
+        pages[insert_at:insert_at] = new_pages
+        cleared = self._clear_hotkey_clashes(new_pages)
+        i = _index_of(pages, cur_page)
+        self._set_page(i if i is not None else insert_at)
+        self.apply()
+        return sum(len(pg["binds"]) for pg in new_pages), cleared
 
     def _clear_hotkey_clashes(self, new_pages):
         """Imported buttons lose any hotkey that's already taken."""
