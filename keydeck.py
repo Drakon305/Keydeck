@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.11.0"
+VERSION = "1.12.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -312,11 +312,20 @@ def fetch_library():
     return sorted(packs, key=lambda x: x["name"].lower())
 
 
-def download_pack(pack):
-    """The pages inside one library pack, tagged with where they came from."""
+def download_pack(pack, token=None):
+    """The pages inside one library pack, tagged with where they came from.
+    With the admin key it reads the file fresh from GitHub, so edits show up right away."""
     import tempfile
-    with _http_get(pack["url"]) as r:
-        raw = r.read()
+    import base64
+    import urllib.parse
+    if token:
+        data = github_api("GET", f"/repos/{GITHUB_REPO}/contents/"
+                          + urllib.parse.quote(f"{LIBRARY_DIR}/{pack['key']}") + "?ref=main", token)
+        raw = base64.b64decode(data.get("content", ""))
+        pack["sha"] = data.get("sha", pack.get("sha"))
+    else:
+        with _http_get(pack["url"]) as r:
+            raw = r.read()
     if len(raw) > 2_000_000:
         raise ValueError("That pack is too big.")
     tmp = os.path.join(tempfile.gettempdir(), "keydeck_pack.keydeck")
@@ -446,6 +455,24 @@ def _close_issue(token, number, comment, reason):
     github_api("POST", f"/repos/{GITHUB_REPO}/issues/{number}/comments", token, {"body": comment})
     github_api("PATCH", f"/repos/{GITHUB_REPO}/issues/{number}", token,
                {"state": "closed", "state_reason": reason})
+
+
+def save_pack_file(token, pack, pages, description, message):
+    """Write a library pack back to GitHub (admin only)."""
+    import base64
+    import urllib.parse
+    content = json.dumps(pages_to_data(pages, description), indent=2, ensure_ascii=False)
+    path = urllib.parse.quote(f"{LIBRARY_DIR}/{pack['key']}")
+    github_api("PUT", f"/repos/{GITHUB_REPO}/contents/{path}", token,
+               {"message": message, "sha": pack["sha"],
+                "content": base64.b64encode(content.encode("utf-8")).decode()})
+
+
+def delete_pack_file(token, pack, message):
+    import urllib.parse
+    path = urllib.parse.quote(f"{LIBRARY_DIR}/{pack['key']}")
+    github_api("DELETE", f"/repos/{GITHUB_REPO}/contents/{path}", token,
+               {"message": message, "sha": pack["sha"]})
 
 
 def approve_submission(token, sub, filename, existing_sha=None):
@@ -1742,6 +1769,95 @@ class SettingsWindow:
 
 
 
+class LibraryItemEditor:
+    """Admin-only: change a button that's already in the shared Library."""
+
+    def __init__(self, lib, it):
+        self.lib, self.it = lib, it
+        b = {**DEFAULT_BIND, **it["bind"]}
+        d = self.win = tk.Toplevel(lib.win)
+        d.title("Edit Library button")
+        d.geometry("520x470")
+        d.minsize(440, 400)
+        d.attributes("-topmost", True)
+        f = ttk.Frame(d, padding=12)
+        f.pack(fill="both", expand=True)
+        f.columnconfigure(1, weight=1)
+        f.rowconfigure(2, weight=1)
+        ttk.Label(f, foreground="#c0392b", wraplength=480, justify="left",
+                  text=f'In "{it["group"]}". Saving changes it in everyone\'s Library right away. '
+                       "Copies people already added aren't changed.").grid(row=0, column=0, columnspan=2,
+                                                                         sticky="w", pady=(0, 8))
+        ttk.Label(f, text="Button name").grid(row=1, column=0, sticky="w", padx=(0, 8))
+        self.label = tk.StringVar(value=b["label"])
+        ttk.Entry(f, textvariable=self.label).grid(row=1, column=1, sticky="ew", pady=3)
+        self.action = b["action"]
+        if self.action == "reply":
+            sf = ttk.Frame(f)
+            sf.grid(row=2, column=1, sticky="nsew", pady=3)
+            sf.columnconfigure(1, weight=1)
+            ttk.Label(f, text="Slash command").grid(row=2, column=0, sticky="nw", pady=3)
+            self.cmd = tk.StringVar(value=b["cmd"] or "/reply")
+            self.opts = [tk.StringVar(value=b[k]) for k in ("opt1", "opt2", "opt3")]
+            for r_, (lbl, var) in enumerate([("Command", self.cmd), ("1st option", self.opts[0]),
+                                             ("2nd option", self.opts[1]), ("3rd option", self.opts[2])]):
+                ttk.Label(sf, text=lbl).grid(row=r_, column=0, sticky="w", padx=(0, 8))
+                ttk.Entry(sf, textvariable=var).grid(row=r_, column=1, sticky="ew", pady=2)
+        else:
+            ttk.Label(f, text="Text to post").grid(row=2, column=0, sticky="nw", pady=3)
+            self.text = tk.Text(f, height=8, wrap="word", font=("Segoe UI", 10), undo=True)
+            self.text.grid(row=2, column=1, sticky="nsew", pady=3)
+            self.text.insert("1.0", b["text"])
+        ttk.Label(f, text="Color").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        self.color = b["color"]
+        sw = tk.Frame(f)
+        sw.grid(row=3, column=1, sticky="w", pady=(6, 0))
+        self.swatches = []
+        for c in SWATCHES:
+            s_ = tk.Label(sw, bg=c, width=3, height=1, cursor="hand2", bd=3, relief="flat")
+            s_.pack(side="left", padx=2)
+            s_.bind("<Button-1>", lambda e, c=c: self.pick_color(c))
+            self.swatches.append((c, s_))
+        self.pick_color(self.color)
+        opts = ttk.Frame(f)
+        opts.grid(row=4, column=1, sticky="w", pady=(8, 0))
+        self.mode = tk.StringVar(value=b["mode"])
+        self.enter = tk.BooleanVar(value=b["enter"])
+        if self.action != "reply":
+            ttk.Radiobutton(opts, text="Paste it", variable=self.mode, value="paste").pack(anchor="w")
+            ttk.Radiobutton(opts, text="Type it out", variable=self.mode, value="type").pack(anchor="w")
+            ttk.Checkbutton(opts, text="Press Enter after", variable=self.enter).pack(anchor="w")
+        bb = ttk.Frame(f)
+        bb.grid(row=5, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(bb, text="Cancel", command=d.destroy).pack(side="right")
+        ttk.Button(bb, text="Save to Library", command=self.save).pack(side="right", padx=(0, 6))
+        force_foreground(d)
+
+    def pick_color(self, c):
+        self.color = c
+        for col, s_ in self.swatches:
+            s_.config(relief="solid" if col == c else "flat")
+
+    def save(self):
+        nb = dict(self.it["bind"])
+        nb.update(label=self.label.get().strip(), color=self.color, mode=self.mode.get(),
+                  enter=self.enter.get(), hotkey="")
+        if self.action == "reply":
+            nb.update(cmd=self.cmd.get().strip() or "/reply",
+                      **{f"opt{n + 1}": v.get().strip() for n, v in enumerate(self.opts)})
+            if not slash_options(nb):
+                messagebox.showerror(APP_NAME, "Fill in at least the 1st option.", parent=self.win)
+                return
+        else:
+            nb["text"] = self.text.get("1.0", "end-1c")
+            if not nb["text"].strip():
+                messagebox.showerror(APP_NAME, "The text can't be empty. Use Delete to remove the button.",
+                                     parent=self.win)
+                return
+        self.win.destroy()
+        self.lib.admin_save_item(self.it, nb)
+
+
 class SubmitDialog:
     """Send one page to the Library admin for approval."""
     _last_sent = 0.0
@@ -1927,16 +2043,18 @@ class LibraryWindow:
                     err = str(e)
             for pack in packs:
                 try:
-                    pages, _ = download_pack(pack)
+                    pages, desc = download_pack(pack, token or None)
+                    pack["_pages"], pack["_desc"] = pages, desc
                 except Exception as e:
                     log(f"Library: skipped {pack['key']}: {e}")
                     continue
                 n = 0
-                for pg in pages:
-                    for b in pg["binds"]:
+                for pi, pg in enumerate(pages):
+                    for bi, b in enumerate(pg["binds"]):
                         if b.get("action") == "page":
                             continue  # only works inside its own set
-                        items.append({"key": f"{pack['key']}#{n}", "group": pack["name"], "bind": b})
+                        items.append({"key": f"{pack['key']}#{n}", "group": pack["name"], "bind": b,
+                                      "pack": pack, "pi": pi, "bi": bi})
                         n += 1
             self.app.ui(self._loaded, packs, items, err, subs, sub_err)
 
@@ -1990,6 +2108,12 @@ class LibraryWindow:
             tog = tk.Label(head, text="Unselect all" if all_on else "Select all", bg="#eef1f6",
                            fg="#2980b9", cursor="hand2", font=("Segoe UI", 8, "underline"))
             tog.pack(side="right")
+            if self._admin():
+                pk = rows[0][0]["pack"]
+                dg = tk.Label(head, text="🗑 Delete group", bg="#eef1f6", fg="#c0392b", cursor="hand2",
+                              font=("Segoe UI", 8))
+                dg.pack(side="right", padx=(0, 12))
+                dg.bind("<Button-1>", lambda e, pk=pk: self.admin_delete_group(pk))
             tog.bind("<Button-1>", lambda e, ks=keys, on=all_on: self._set_many(ks, not on))
             for it, title, detail in rows:
                 self._row(it, title, detail)
@@ -2009,6 +2133,11 @@ class LibraryWindow:
         txt = tk.Frame(row, bg="#ffffff")
         txt.pack(side="left", fill="x", expand=True)
         tk.Label(txt, text=title, bg="#ffffff", font=("Segoe UI", 9, "bold"), anchor="w").pack(anchor="w")
+        if self._admin():
+            for label, fn, color in (("🗑", self.admin_delete, "#c0392b"), ("✎ Edit", self.admin_edit, "#2980b9")):
+                a = tk.Label(row, text=label, bg="#ffffff", fg=color, cursor="hand2", font=("Segoe UI", 9))
+                a.pack(side="right", padx=4)
+                a.bind("<Button-1>", lambda e, fn=fn: fn(it))
         tk.Label(txt, text=detail[:90] + ("…" if len(detail) > 90 else ""), bg="#ffffff",
                  fg="#777777", font=("Segoe UI", 8), anchor="w").pack(anchor="w")
 
@@ -2058,6 +2187,75 @@ class LibraryWindow:
         self._fill_targets()
         self.target.current(k)
         self._render()
+
+
+    # ---- admin: change the live library ----
+    def _admin(self):
+        return bool(self.app.cfg["panel"]["admin_token"])
+
+    def _admin_write(self, work, done_msg):
+        """Run a change against GitHub in the background, then reload the library."""
+        token = self.app.cfg["panel"]["admin_token"]
+
+        def worker():
+            try:
+                work(token)
+                err = None
+            except Exception as e:
+                err = str(e)
+
+            def done():
+                if err:
+                    hint = ("\n\nSomeone may have changed it at the same time - click Refresh and try again."
+                            if "409" in err or "sha" in err.lower() else "")
+                    messagebox.showerror(APP_NAME, f"Couldn't change the library.\n\n{err}{hint}",
+                                         parent=self.win)
+                elif done_msg:
+                    messagebox.showinfo(APP_NAME, done_msg, parent=self.win)
+                self.load()
+            self.app.ui(done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def admin_edit(self, it):
+        LibraryItemEditor(self, it)
+
+    def admin_save_item(self, it, new_bind):
+        pack = it["pack"]
+        pages = json.loads(json.dumps(pack["_pages"]))
+        pages[it["pi"]]["binds"][it["bi"]] = clean_bind(new_bind)
+        title = new_bind.get("label") or "button"
+        self._admin_write(lambda tok: save_pack_file(tok, pack, pages, pack.get("_desc", ""),
+                                                     f"Library: edit {title} in {pack['key']}"),
+                          f'Saved. "{title}" is updated in everyone\'s Library.')
+
+    def admin_delete(self, it):
+        pack = it["pack"]
+        title = self._summary(it["bind"])[0]
+        if not messagebox.askyesno(APP_NAME, f'Delete "{title}" from everyone\'s Library?\n\n'
+                                   "People who already added it keep their copy.", parent=self.win):
+            return
+        pages = json.loads(json.dumps(pack["_pages"]))
+        del pages[it["pi"]]["binds"][it["bi"]]
+        pages = [pg for pg in pages if pg["binds"]]
+        self.selected.discard(it["key"])
+        if pages:
+            self._admin_write(lambda tok: save_pack_file(tok, pack, pages, pack.get("_desc", ""),
+                                                         f"Library: delete {title} from {pack['key']}"),
+                              f'Deleted "{title}".')
+        else:  # that was the last button in the file
+            self._admin_write(lambda tok: delete_pack_file(tok, pack, f"Library: delete {pack['key']}"),
+                              f'Deleted "{title}".')
+
+    def admin_delete_group(self, pack):
+        n = sum(len(pg["binds"]) for pg in pack.get("_pages", []))
+        if not messagebox.askyesno(APP_NAME, f'Delete the whole group "{pack["name"]}" ({n} buttons) '
+                                   "from everyone's Library?\n\nPeople who already added its buttons "
+                                   "keep their copies.", parent=self.win):
+            return
+        self.selected = {k for k in self.selected if not k.startswith(pack["key"] + "#")}
+        self._admin_write(lambda tok: delete_pack_file(tok, pack, f"Library: delete {pack['key']}"),
+                          f'Deleted "{pack["name"]}".')
 
     # ---- admin: submissions ----
     def _show_submissions(self, subs, err):
@@ -2966,6 +3164,13 @@ def selftest():
         lw.search.set("")
         lw.clear_selection()
         assert not lw.selected
+        fake_pack = {"key": "Set.keydeck", "name": "Set", "sha": "x", "_pages": [], "_desc": ""}
+        for it in items:
+            it["pack"], it["pi"], it["bi"] = fake_pack, 0, 0
+        fa.cfg["panel"]["admin_token"] = "test"  # draw the admin edit/delete controls too
+        lw._render()
+        LibraryItemEditor(lw, items[1]).win.destroy()
+        LibraryItemEditor(lw, items[0]).win.destroy()
         lw.win.destroy()
         r.destroy()
     except Exception:

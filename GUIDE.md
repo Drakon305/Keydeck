@@ -124,6 +124,8 @@ Click **📦 Library**. It's one big list of every button people have shared, gr
 - If a hotkey in an added button is one you already use, it's left off (you keep yours).
 - Go-to-page buttons aren't listed (they only work inside their own set).
 
+**Admin (Drakon):** with admin mode on, every button in the Library has **✎ Edit** (change its name, text/command, color) and **🗑** (delete it), and every group has **🗑 Delete group**. Changes go live in everyone's Library right away. Copies people already added aren't touched.
+
 **Sharing your buttons:** right-click a single button → **Submit to Library…**, or submit a whole page: right-click the tab → **Submit to Library…**. Drakon approves it, then it shows up in everyone's Library.
 
 ---
