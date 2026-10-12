@@ -115,16 +115,16 @@ Example:
 
 ## 6. Button Library
 
-Click **📦 Library**. It's one big list of every button people have shared, grouped by who/what they came from.
+Click **📦 Library**. It shows every button people have shared as colored tiles, grouped by where they came from.
 
 - **🔍 Search** to find buttons by name or text.
-- **Tick** as many buttons as you want, from any group. Click anywhere on a row to tick it.
+- **Click tiles** to select as many as you want, from any group (selected tiles get an orange border and ✓). **Hover** a tile to read its full text at the bottom.
 - **Select all** on a group header ticks the whole group.
 - **Add to:** pick one of your pages, or **➕ New page…**, then click **Add**.
 - If a hotkey in an added button is one you already use, it's left off (you keep yours).
 - Go-to-page buttons aren't listed (they only work inside their own set).
 
-**Admin (Drakon):** with admin mode on, every button in the Library has **✎ Edit** (change its name, text/command, color) and **🗑** (delete it), and every group has **🗑 Delete group**. Changes go live in everyone's Library right away. Copies people already added aren't touched.
+**Admin (Drakon):** with admin mode on, **right-click** any tile for **✎ Edit** (change its name, text/command, color) or **🗑 Delete**, and every group has **🗑 Delete group**. Changes go live in everyone's Library right away. Copies people already added aren't touched.
 
 **Sharing your buttons:** right-click a single button → **Submit to Library…**, or submit a whole page: right-click the tab → **Submit to Library…**. Drakon approves it, then it shows up in everyone's Library.
 

@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.12.0"
+VERSION = "1.13.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -1975,12 +1975,16 @@ class LibraryWindow:
         self.list = tk.Frame(self.canvas, bg="#ffffff")
         self.list.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         self._win_id = self.canvas.create_window((0, 0), window=self.list, anchor="nw")
-        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._win_id, width=e.width))
+        self.canvas.bind("<Configure>", self._on_resize)
+        self._cols, self._resize_job = 4, None
         self.canvas.configure(yscrollcommand=sb.set)
         self.canvas.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
         self.canvas.bind_all("<MouseWheel>", self._wheel, add="+")
 
+        self.hover = ttk.Label(w, foreground="#555555", font=("Segoe UI", 8), anchor="w",
+                               text="Click tiles to select them. Hover a tile to read its full text.")
+        self.hover.pack(fill="x", padx=14)
         bottom = ttk.Frame(w, padding=(12, 4, 12, 12))
         bottom.pack(fill="x")
         self.count_label = ttk.Label(bottom, text="0 selected", width=11)
@@ -2086,7 +2090,7 @@ class LibraryWindow:
             c.destroy()
         if self.app.cfg["panel"]["admin_token"] and (self._subs is not None or self._sub_err):
             self._show_submissions(self._subs, self._sub_err)
-            self._section("LIBRARY")
+            self._section("LIBRARY  -  right-click a tile to edit or delete it")
         if self._err:
             self._message(f"Couldn't load the library.\n\n{self._err}")
         q = self.search.get().strip().lower()
@@ -2115,37 +2119,76 @@ class LibraryWindow:
                 dg.pack(side="right", padx=(0, 12))
                 dg.bind("<Button-1>", lambda e, pk=pk: self.admin_delete_group(pk))
             tog.bind("<Button-1>", lambda e, ks=keys, on=all_on: self._set_many(ks, not on))
-            for it, title, detail in rows:
-                self._row(it, title, detail)
+            grid = tk.Frame(self.list, bg="#ffffff")
+            grid.pack(fill="x", pady=(4, 2))
+            for n, (it, title, detail) in enumerate(rows):
+                self._tile(grid, it, title, detail, n // self._cols, n % self._cols)
         self._update_count()
 
-    def _row(self, it, title, detail):
-        b, key = it["bind"], it["key"]
-        row = tk.Frame(self.list, bg="#ffffff", pady=3)
-        row.pack(fill="x")
-        var = tk.BooleanVar(value=key in self.selected)
+    TILE_W, TILE_H = 132, 84
 
-        def toggled(*_):
-            (self.selected.add if var.get() else self.selected.discard)(key)
-            self._update_count()
-        ttk.Checkbutton(row, variable=var, command=toggled).pack(side="left", padx=(4, 0))
-        tk.Label(row, bg=b["color"], width=2).pack(side="left", padx=(2, 8))
-        txt = tk.Frame(row, bg="#ffffff")
-        txt.pack(side="left", fill="x", expand=True)
-        tk.Label(txt, text=title, bg="#ffffff", font=("Segoe UI", 9, "bold"), anchor="w").pack(anchor="w")
-        if self._admin():
-            for label, fn, color in (("🗑", self.admin_delete, "#c0392b"), ("✎ Edit", self.admin_edit, "#2980b9")):
-                a = tk.Label(row, text=label, bg="#ffffff", fg=color, cursor="hand2", font=("Segoe UI", 9))
-                a.pack(side="right", padx=4)
-                a.bind("<Button-1>", lambda e, fn=fn: fn(it))
-        tk.Label(txt, text=detail[:90] + ("…" if len(detail) > 90 else ""), bg="#ffffff",
-                 fg="#777777", font=("Segoe UI", 8), anchor="w").pack(anchor="w")
+    def _on_resize(self, e):
+        self.canvas.itemconfigure(self._win_id, width=e.width)
+        cols = max(1, (e.width - 8) // (self.TILE_W + 8))
+        if cols != self._cols:
+            self._cols = cols
+            if self._resize_job:
+                self.win.after_cancel(self._resize_job)
+            self._resize_job = self.win.after(150, self._render)
+
+    def _tile(self, parent, it, title, detail, r, c):
+        """One library button, drawn like a KeyDeck button. Click to select."""
+        b, key = it["bind"], it["key"]
+        color = b["color"]
+        fg = text_color_for(color)
+        f = tk.Frame(parent, bg=color, width=self.TILE_W, height=self.TILE_H, cursor="hand2",
+                     highlightthickness=3)
+        f.grid(row=r, column=c, padx=4, pady=4)
+        f.pack_propagate(False)
+        name = tk.Label(f, text=title, bg=color, fg=fg, font=("Segoe UI", 9, "bold"),
+                        wraplength=self.TILE_W - 14, justify="center", cursor="hand2")
+        name.pack(expand=True, fill="both", padx=4, pady=(4, 0))
+        small = (b.get("cmd") or "/reply") if b.get("action") == "reply" else ""
+        widgets = [f, name]
+        if small:
+            sl = tk.Label(f, text=small, bg=color, fg=fg, font=("Consolas", 7), cursor="hand2")
+            sl.pack(side="bottom", pady=(0, 3))
+            widgets.append(sl)
+        check = tk.Label(f, text="✓", bg=ACCENT, fg="#111111", font=("Segoe UI", 9, "bold"), padx=3)
+
+        def paint():
+            on = key in self.selected
+            f.config(highlightbackground=ACCENT if on else "#ffffff",
+                     highlightcolor=ACCENT if on else "#ffffff")
+            if on:
+                check.place(relx=1.0, x=-2, y=2, anchor="ne")
+            else:
+                check.place_forget()
 
         def click(e):
-            var.set(not var.get())
-            toggled()
-        for wdg in (row, txt) + tuple(txt.winfo_children()):
+            (self.selected.discard if key in self.selected else self.selected.add)(key)
+            paint()
+            self._update_count()
+
+        def hover_in(e):
+            self.hover.config(text=f"{it['group']}  ›  {title}:  {detail}"[:220])
+
+        def menu(e):
+            if not self._admin():
+                return
+            m = tk.Menu(self.win, tearoff=0)
+            m.add_command(label="✎ Edit in Library…", command=lambda: self.admin_edit(it))
+            m.add_command(label="🗑 Delete from Library", command=lambda: self.admin_delete(it))
+            try:
+                m.tk_popup(e.x_root, e.y_root)
+            finally:
+                m.grab_release()
+
+        for wdg in widgets + [check]:
             wdg.bind("<Button-1>", click)
+            wdg.bind("<Enter>", hover_in)
+            wdg.bind("<Button-3>", menu)
+        paint()
 
     def _set_many(self, keys, on):
         for k in keys:
