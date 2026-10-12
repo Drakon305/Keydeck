@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.8.0"
+VERSION = "1.9.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -102,7 +102,9 @@ SWATCHES = ["#3a3d46", "#c0392b", "#d35400", "#f39c12", "#27ae60",
 DEFAULT_BIND = {"label": "", "hotkey": "", "text": "", "mode": "paste",
                 "enter": False, "enabled": True, "color": TILE,
                 "action": "text",  # "text" = post text, "page" = jump to another page
-                "goto": ""}        # id of the page to jump to (for action "page")
+                "goto": "",        # id of the page to jump to (for action "page")
+                # action "reply" = a Discord slash command filled in for you:
+                "cmd": "/reply", "opt1": "", "opt2": "", "opt3": ""}
 DEFAULT_CONFIG = {
     "pages": [
         {"name": "Main", "binds": [
@@ -127,6 +129,7 @@ DEFAULT_CONFIG = {
         "toggle_hotkey": "ctrl+alt+p",
         "beta": False,  # True = get test versions before everyone else
         "submitter": "",  # name shown on Library submissions
+        "slash_speed": 1.0,  # multiplies the pauses in slash-command buttons
         "admin_token": "",  # Library admin key (only on the admin's PC)
     },
 }
@@ -191,6 +194,10 @@ def load_config():
     p["show_hotkeys"] = bool(p["show_hotkeys"])
     p["always_on_top"] = bool(p["always_on_top"])
     p["beta"] = bool(p["beta"])
+    try:
+        p["slash_speed"] = max(0.5, min(3.0, float(p["slash_speed"])))
+    except Exception:
+        p["slash_speed"] = 1.0
     for key in ("submitter", "admin_token"):
         if not isinstance(p.get(key), str):
             p[key] = ""
@@ -224,9 +231,9 @@ def new_page_id():
 def clean_bind(b):
     """A safe, complete button from whatever a file contained."""
     b = {**DEFAULT_BIND, **{k: v for k, v in b.items() if k in DEFAULT_BIND}}
-    if b.get("action") not in ("text", "page"):
+    if b.get("action") not in ("text", "page", "reply"):
         b["action"] = "text"
-    for k in ("label", "hotkey", "text", "goto"):
+    for k in ("label", "hotkey", "text", "goto", "cmd", "opt1", "opt2", "opt3"):
         if not isinstance(b.get(k), str):
             b[k] = ""
     if b["mode"] not in ("paste", "type"):
@@ -576,6 +583,32 @@ def plan_text(text, clip=None):
     chunk = text[pos:]
     if chunk:
         steps.append(("text", _CLIP_RE.sub(lambda _: clip or "", chunk)))
+    return steps
+
+
+SLASH_SPEEDS = [("Fast", 0.7), ("Normal", 1.0), ("Slow", 1.5), ("Very slow", 2.0), ("Super slow", 3.0)]
+
+
+def slash_options(b):
+    return [b.get(k, "").strip() for k in ("opt1", "opt2", "opt3") if b.get(k, "").strip()]
+
+
+def slash_plan(b, speed=1.0, clip=None):
+    """Steps for a Discord slash-command button: type the command, pick it, then
+    type each option and pick it from Discord's list, then send.
+    Same timing as the hand-made recipe that worked:
+    /reply{wait 1}{tab}Cat{wait 1.5}{tab}Resp{wait 2}{tab}{wait 0.5}{enter}"""
+    def flat(t):  # allow {a|b} and {clipboard} inside options
+        return "".join(st[1] for st in plan_text(t, clip) if st[0] == "text")
+    cmd = flat(b.get("cmd") or "/reply").strip()
+    if not cmd.startswith("/"):
+        cmd = "/" + cmd
+    steps = [("text", cmd), ("wait", round(1.0 * speed, 2))]
+    opts = slash_options(b)
+    for n, opt in enumerate(opts):
+        last = n == len(opts) - 1
+        steps += [("tab",), ("text", flat(opt)), ("wait", round((2.0 if last else 1.5) * speed, 2))]
+    steps += [("tab",), ("wait", round(0.5 * speed, 2)), ("enter",)]
     return steps
 
 
@@ -1150,6 +1183,9 @@ class Panel:
         target = self.app.page_by_id(b.get("goto")) if is_link else None
         if is_link:
             title = b["label"] or (target["name"] if target else "(missing page)")
+        elif b.get("action") == "reply":
+            opts = slash_options(b)
+            title = b["label"] or (opts[-1] if opts else b.get("cmd") or "(empty)")
         else:
             title = b["label"] or " ".join(b["text"].split())[:40] or "(empty)"
         name = tk.Label(f, text=title, bg=color, fg=fg, font=("Segoe UI", fs, "bold"),
@@ -1161,6 +1197,8 @@ class Panel:
         sub = []
         if is_link:
             sub.append("→ " + (target["name"] if target else "missing page"))
+        elif b.get("action") == "reply":
+            sub.append((b.get("cmd") or "/reply").strip())
         if p["show_hotkeys"] and b["hotkey"]:
             sub.append(pretty_hotkey(b["hotkey"]))
         if sub:
@@ -1177,9 +1215,20 @@ class Panel:
 
         for w in widgets:
             w.bind("<Button-1>", lambda e, i=i, ws=widgets, c=color: self._on_click(i, ws, c))
-            w.bind("<Button-3>", lambda e, i=i: self.app.edit_bind(i))  # right-click = edit
+            w.bind("<Button-3>", lambda e, i=i: self._button_menu(e, i))  # right-click menu
             w.bind("<Enter>", enter)
             w.bind("<Leave>", leave)
+
+    def _button_menu(self, e, i):
+        m = tk.Menu(self.win, tearoff=0)
+        m.add_command(label="Edit…", command=lambda: self.app.edit_bind(i))
+        m.add_command(label="Duplicate", command=lambda: self.app.duplicate_bind(i))
+        m.add_separator()
+        m.add_command(label="Delete", command=lambda: self.app.delete_bind(i))
+        try:
+            m.tk_popup(e.x_root, e.y_root)
+        finally:
+            m.grab_release()
 
     def _make_add_tile(self, row, col):
         f, size = self._tile_frame(row, col, BG)
@@ -1234,7 +1283,7 @@ class BindEditor:
 
         d = self.win = tk.Toplevel(app.root)
         d.title("Edit button" if editing else "New button")
-        d.geometry("560x580")
+        d.geometry("580x600")
         d.minsize(480, 520)
         d.attributes("-topmost", True)
         d.protocol("WM_DELETE_WINDOW", self.close)
@@ -1258,8 +1307,9 @@ class BindEditor:
         self.rec_btn.pack(side="left")
         ttk.Button(hkb, text="Clear", command=lambda: self.hotkey.set("")).pack(side="left", padx=(4, 0))
 
-        ttk.Label(f, text="Text to post").grid(row=2, column=0, sticky="nw", pady=3)
-        tf = ttk.Frame(f)
+        self.text_label = ttk.Label(f, text="Text to post")
+        self.text_label.grid(row=2, column=0, sticky="nw", pady=3)
+        tf = self.text_frame = ttk.Frame(f)
         tf.grid(row=2, column=1, columnspan=2, sticky="nsew", pady=3)
         self.text = tk.Text(tf, height=7, wrap="word", font=("Segoe UI", 10), undo=True)
         self.text.pack(fill="both", expand=True)
@@ -1270,6 +1320,27 @@ class BindEditor:
                   text="{a|b} random  {clipboard} copied  {enter} Enter  {tab} Tab  {wait 1} pause"
                   ).pack(side="left")
         ttk.Button(tip, text="Preview", command=self.preview).pack(side="right")
+
+        sf = self.slash_frame = ttk.Frame(f)
+        sf.grid(row=2, column=1, columnspan=2, sticky="nsew", pady=3)
+        sf.columnconfigure(1, weight=1)
+        self.cmd = tk.StringVar(value=b.get("cmd") or "/reply")
+        self.opts = [tk.StringVar(value=b.get(k, "")) for k in ("opt1", "opt2", "opt3")]
+        rows = [("Command", self.cmd, "e.g. /reply"),
+                ("1st option", self.opts[0], "e.g. General Support (category)"),
+                ("2nd option", self.opts[1], "e.g. Raid Not Spawning (response)"),
+                ("3rd option", self.opts[2], "optional - leave empty if the command has 2")]
+        for r_, (lbl, var, hint) in enumerate(rows):
+            ttk.Label(sf, text=lbl).grid(row=r_ * 2, column=0, sticky="w", padx=(0, 8))
+            ttk.Entry(sf, textvariable=var).grid(row=r_ * 2, column=1, sticky="ew", pady=(2, 0))
+            ttk.Label(sf, text=hint, foreground="#888888", font=("Segoe UI", 8)
+                      ).grid(row=r_ * 2 + 1, column=1, sticky="w")
+        stip = ttk.Frame(sf)
+        stip.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        ttk.Label(stip, foreground="#666666", font=("Segoe UI", 8), wraplength=330, justify="left",
+                  text="Type the option names as they appear in Discord's list. "
+                       "Too fast or slow? Settings > Slash command speed.").pack(side="left")
+        ttk.Button(stip, text="Preview", command=self.preview).pack(side="right")
 
         ttk.Label(f, text="Color").grid(row=3, column=0, sticky="w", pady=(6, 0))
         self.color = b["color"] or TILE
@@ -1296,17 +1367,20 @@ class BindEditor:
         act = ttk.Frame(opts)
         act.pack(anchor="w", pady=(0, 6))
         self.action = tk.StringVar(value=b.get("action", "text"))
-        ttk.Radiobutton(act, text="Post the text", variable=self.action, value="text",
+        ttk.Radiobutton(act, text="Post text", variable=self.action, value="text",
                         command=self._action_changed).pack(side="left")
+        ttk.Radiobutton(act, text="Slash command", variable=self.action, value="reply",
+                        command=self._action_changed).pack(side="left", padx=(10, 0))
         ttk.Radiobutton(act, text="Go to page:", variable=self.action, value="page",
-                        command=self._action_changed).pack(side="left", padx=(12, 4))
+                        command=self._action_changed).pack(side="left", padx=(10, 4))
         self._page_ids = [pg["id"] for pg in app.cfg["pages"]]
         self.goto_box = ttk.Combobox(act, values=[pg["name"] for pg in app.cfg["pages"]],
                                      state="readonly", width=18)
         if b.get("goto") in self._page_ids:
             self.goto_box.current(self._page_ids.index(b["goto"]))
         self.goto_box.pack(side="left")
-        self.goto_box.bind("<<ComboboxSelected>>", lambda e: self.action.set("page"))
+        self.goto_box.bind("<<ComboboxSelected>>",
+                           lambda e: (self.action.set("page"), self._action_changed()))
 
         self.mode = tk.StringVar(value=b["mode"])
         ttk.Radiobutton(opts, text="Paste it (fast, works almost everywhere)",
@@ -1323,24 +1397,51 @@ class BindEditor:
         bb.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(12, 0))
         if editing:
             ttk.Button(bb, text="Delete", command=self.delete).pack(side="left")
+            ttk.Button(bb, text="Duplicate", command=self.duplicate).pack(side="left", padx=(6, 0))
             ttk.Button(bb, text="◀ Move", command=lambda: self.move(-1)).pack(side="left", padx=(6, 0))
             ttk.Button(bb, text="Move ▶", command=lambda: self.move(1)).pack(side="left", padx=(4, 0))
         ttk.Button(bb, text="Cancel", command=self.close).pack(side="right")
         ttk.Button(bb, text="Save", command=self.save).pack(side="right", padx=(0, 6))
 
+        self._show_fields()
         force_foreground(d)
         d.after(80, lambda: force_foreground(d) if d.winfo_exists() else None)
         (self.text if editing else self.label_entry).focus_set()
 
+    def _show_fields(self):
+        """Text box for normal buttons, command fields for slash-command buttons."""
+        if self.action.get() == "reply":
+            self.text_frame.grid_remove()
+            self.slash_frame.grid()
+            self.text_label.config(text="Slash command")
+        else:
+            self.slash_frame.grid_remove()
+            self.text_frame.grid()
+            self.text_label.config(text="Text to post" if self.action.get() == "text" else "Text (not used)")
+
     def _action_changed(self):
+        self._show_fields()
         if self.action.get() == "page" and self.goto_box.current() < 0:
             self.goto_box.focus_set()
             self.goto_box.event_generate("<Down>")  # open the list so you can pick
 
+    def _slash_data(self):
+        return {"cmd": self.cmd.get().strip() or "/reply",
+                **{f"opt{n + 1}": v.get().strip() for n, v in enumerate(self.opts)}}
+
     def preview(self):
+        if self.action.get() == "reply":
+            speed = self.app.cfg["panel"]["slash_speed"]
+            plan = describe_plan(slash_plan(self._slash_data(), speed))
+            messagebox.showinfo(APP_NAME, "KeyDeck will type it out like this:\n\n" + plan, parent=self.win)
+            return
         raw = self.text.get("1.0", "end-1c")
         samples = "\n\n".join(f"{n}) {describe_plan(plan_text(raw))}" for n in range(1, 4))
         messagebox.showinfo(APP_NAME, f"Three sample results:\n\n{samples}", parent=self.win)
+
+    def duplicate(self):
+        self.close()
+        self.app.duplicate_bind(self.index)
 
     def pick_color(self, c):
         self.color = c
@@ -1371,6 +1472,10 @@ class BindEditor:
                 err = "Pick which page this button should go to."
             else:
                 goto = self._page_ids[k]
+        elif action == "reply":
+            sd = self._slash_data()
+            if not any(sd[k] for k in ("opt1", "opt2", "opt3")):
+                err = "Fill in at least the 1st option (for /reply: the category)."
         elif not text.strip():
             err = "Type the text this button should post."
         if not err and hk:
@@ -1386,7 +1491,7 @@ class BindEditor:
         data = {"label": self.label.get().strip(), "hotkey": hk, "text": text,
                 "mode": self.mode.get(), "enter": self.enter.get(),
                 "enabled": self.enabled.get(), "color": self.color,
-                "action": action, "goto": goto}
+                "action": action, "goto": goto, **self._slash_data()}
         cur = self.app.cfg["current_page"]
         target = self.page_box.current()
         if target < 0:
@@ -1436,7 +1541,7 @@ class SettingsWindow:
         p = app.cfg["panel"]
         w = self.win = tk.Toplevel(app.root)
         w.title(f"{APP_NAME} Settings")
-        w.geometry("480x590")
+        w.geometry("480x620")
         w.attributes("-topmost", True)
         w.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -1474,6 +1579,13 @@ class SettingsWindow:
         self.on_top = tk.BooleanVar(value=p["always_on_top"])
         ttk.Checkbutton(f, text="Keep KeyDeck on top of other windows", variable=self.on_top
                         ).grid(row=r, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        r += 1
+        ttk.Label(f, text="Slash command speed").grid(row=r, column=0, sticky="w", padx=(0, 8))
+        names = [n for n, _ in SLASH_SPEEDS]
+        cur = min(SLASH_SPEEDS, key=lambda x: abs(x[1] - p["slash_speed"]))[0]
+        self.slash_speed = ttk.Combobox(f, values=names, state="readonly", width=12)
+        self.slash_speed.set(cur)
+        self.slash_speed.grid(row=r, column=1, sticky="w", pady=3)
         r += 1
         self.show_hotkeys = tk.BooleanVar(value=p["show_hotkeys"])
         ttk.Checkbutton(f, text="Show hotkeys on buttons", variable=self.show_hotkeys
@@ -1606,6 +1718,7 @@ class SettingsWindow:
             font_size=num(self.font_size, 7, 24, 10),
             opacity=round(float(self.opacity.get()), 2),
             show_hotkeys=self.show_hotkeys.get(),
+            slash_speed=dict(SLASH_SPEEDS).get(self.slash_speed.get(), 1.0),
             always_on_top=self.on_top.get(),
             toggle_hotkey=hk,
         )
@@ -2213,9 +2326,12 @@ class App:
                     log("No window to type into yet; click into a text box first.")
                     continue
                 self._wait_for_modifiers()
-                for step in plan_text(b["text"]):
+                is_slash = b.get("action") == "reply"
+                steps = (slash_plan(b, self.cfg["panel"]["slash_speed"]) if is_slash
+                         else plan_text(b["text"]))
+                for step in steps:
                     if step[0] == "text":
-                        if b.get("mode") == "type":
+                        if is_slash or b.get("mode") == "type":  # slash commands must be typed
                             keyboard.write(step[1], delay=0.003)
                         else:
                             self._paste(step[1])
@@ -2225,7 +2341,7 @@ class App:
                         time.sleep(0.15)  # give the app a moment before the next part
                     else:
                         time.sleep(step[1])
-                if b.get("enter"):
+                if b.get("enter") and not is_slash:  # slash commands already end with Enter
                     time.sleep(0.06)
                     keyboard.send("enter")
             except Exception:
@@ -2550,6 +2666,29 @@ class App:
                     taken.add(hk)
         return cleared
 
+    def duplicate_bind(self, i):
+        """Copy a button right after itself and open the copy for editing."""
+        binds = self.cfg["binds"]
+        if i is None or not (0 <= i < len(binds)):
+            return
+        copy = dict(binds[i])
+        copy["hotkey"] = ""  # two buttons can't share a hotkey
+        copy["label"] = (copy["label"] + " (copy)")[:40] if copy["label"] else ""
+        binds.insert(i + 1, copy)
+        self.apply()
+        self.edit_bind(i + 1)
+
+    def delete_bind(self, i):
+        binds = self.cfg["binds"]
+        if not (0 <= i < len(binds)):
+            return
+        name = binds[i].get("label") or "this button"
+        if messagebox.askyesno(APP_NAME, f'Delete "{name}"?', parent=self.root):
+            if self.editor:
+                self.editor.close()
+            del binds[i]
+            self.apply()
+
     def open_settings(self):
         if self.settings and self.settings.win.winfo_exists():
             force_foreground(self.settings.win)
@@ -2684,6 +2823,9 @@ def selftest():
         assert sub["name"] == "Mod set" and sub["submitter"] == "Tester" and sub["description"] == "for tickets"
         assert sub["pages"][0]["binds"][0]["text"] == "yo {enter}"
         assert safe_pack_filename('a/b:c*"d') == "abcd.keydeck"
+        sp = slash_plan({"cmd": "/reply", "opt1": "General Support", "opt2": "Raid Not Spawning", "opt3": ""})
+        assert sp == [("text", "/reply"), ("wait", 1.0), ("tab",), ("text", "General Support"), ("wait", 1.5),
+                      ("tab",), ("text", "Raid Not Spawning"), ("wait", 2.0), ("tab",), ("wait", 0.5), ("enter",)]
         assert plan_text("hi{enter}/tp {clipboard}{Enter}", clip="Bob{enter}") == [
             ("text", "hi"), ("enter",), ("text", "/tp Bob{enter}"), ("enter",)]
         assert plan_text("a{wait 1.5}b") == [("text", "a"), ("wait", 1.5), ("text", "b")]

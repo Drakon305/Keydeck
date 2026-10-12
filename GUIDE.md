@@ -23,7 +23,7 @@ From then on, open KeyDeck from the Desktop shortcut.
 | **📦 Library** | Browse ready-made button sets and add the ones you want. |
 | **⚙ Settings** | All options (see section 8). |
 | **Tabs** (Main, Game, …) | Your pages. Click to switch, or scroll the mouse wheel over them. |
-| **The buttons** | Click to post. **Right-click** any button to edit it. |
+| **The buttons** | Click to post. **Right-click** any button for **Edit / Duplicate / Delete**. |
 
 - **Move it:** drag the title bar.
 - **Resize it:** drag any edge or corner. The buttons stretch to fill.
@@ -45,12 +45,15 @@ Click **+ Add** (or right-click an existing button). In the editor:
 - **Color** – pick a color.
 - **Shown on page** – which page the button lives on (use this to move a button to another page).
 - **What it does:**
-  - **Post the text** – normal button.
+  - **Post text** – normal button.
+  - **Slash command** – fills in a Discord command like `/reply` for you (see "Discord slash commands" below).
   - **Go to page:** – the button jumps to another page instead (section 5).
 - **Paste it** (fast, works almost everywhere) or **Type it out** (needed for Discord slash commands and apps that block pasting).
 - **Press Enter after** – sends the message automatically.
 - **Enabled** – untick to switch a button off without deleting it.
-- **Delete / ◀ Move / Move ▶** – remove or reorder the button.
+- **Delete / Duplicate / ◀ Move / Move ▶** – remove, copy, or reorder the button.
+
+**Duplicate** (right-click a button → Duplicate) makes a copy right next to it and opens it, so you only change what's different. The copy has no hotkey, since two buttons can't share one.
 
 ---
 
@@ -72,7 +75,18 @@ Put these anywhere in a button's text:
 
 ### Discord slash commands (like /reply)
 
-Discord only treats `/reply` as a command if it's **typed**, and options must be **picked from the bot's list**. Use **Type it out**, untick **Press Enter after**, and use this pattern:
+**The easy way:** in the button editor choose **Slash command**, then fill in:
+
+- **Command:** `/reply`
+- **1st option:** the category, e.g. `General Support`
+- **2nd option:** the response, e.g. `Raid Not Spawning`
+- **3rd option:** only if the command has one
+
+KeyDeck types the command, picks each option from Discord's list, and sends it. Type the option names the way they appear in Discord's list. **Preview** shows exactly what it will do. `{clipboard}` and `{a|b}` work inside options too.
+
+If Discord is laggy and it sends too early or says "response not found", change **Settings → Slash command speed** to **Slow** (or **Very slow**). That slows down every slash-command button at once.
+
+**The manual way** (for anything the easy way can't do): use **Type it out**, untick **Press Enter after**, and use this pattern:
 
 ```
 /reply{wait 1}{tab}CATEGORY{wait 1.5}{tab}RESPONSE{wait 2}{tab}{wait 0.5}{enter}
@@ -131,6 +145,7 @@ Click **📦 Library** to see ready-made button sets.
 | Opacity | See-through window |
 | Show/hide hotkey | Default **Ctrl+Alt+P** |
 | Keep KeyDeck on top | Stays above other windows |
+| Slash command speed | How long slash-command buttons wait for Discord (Fast → Super slow) |
 | Show hotkeys on buttons | Small hotkey text on each button |
 | Start KeyDeck with Windows | Opens automatically when you log in |
 | Tester: get new versions early (beta) | Get new versions before everyone else |
