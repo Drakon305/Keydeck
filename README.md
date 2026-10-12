@@ -20,6 +20,8 @@ KeyDeck checks for updates when it opens and offers to install new versions itse
 - **Pages** (tabs) to group buttons — right-click a tab to rename, move or delete it
 - Optional global hotkey per button (works on every page)
 - **Go-to-page buttons**: a button (or its hotkey) can jump straight to another page instead of posting text
+- **Slash command buttons**: fill in `/reply` + options and KeyDeck types, picks and sends it (Settings → Slash command speed)
+- Right-click a button: Edit / Duplicate / Submit to Library / Delete
 - Paste or type-out mode, optional auto-Enter
 - Text commands:
   - `{hello|hey|what's up}` — picks one at random each time
@@ -33,9 +35,9 @@ KeyDeck checks for updates when it opens and offers to install new versions itse
 
 ## Button Library
 
-Click **📦 Library** in KeyDeck to browse ready-made button sets and add the ones you want as new pages. Your own buttons are never changed, and if a set is improved later, the Library shows an **Update** button.
+Click **📦 Library** in KeyDeck to see every shared button as colored tiles. Search, click to select as many as you want, and add them to any of your pages (or a new one) in one go. Your own buttons are never changed.
 
-**Adding a set to the library:** build the buttons on their own page in KeyDeck, right-click the tab → **Export this page…**, then upload the `.keydeck` file into the [`packs`](packs) folder on GitHub (open the folder → **Add file → Upload files**). It shows up in everyone's Library right away. Upload a file with the same name to update it.
+**Sharing:** right-click a button (or a page tab) → **Submit to Library…**. The admin approves it from inside KeyDeck, and can edit or delete Library buttons by right-clicking them.
 
 ## Testing updates before everyone gets them
 
