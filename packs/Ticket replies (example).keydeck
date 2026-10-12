@@ -1,7 +1,7 @@
 {
   "keydeck_export": 1,
-  "app_version": "1.7.0",
-  "description": "Example /reply buttons for the ticket bot. Right-click a button to change the category or response to match your bot.",
+  "app_version": "1.9.0",
+  "description": "Example /reply buttons for the ticket bot (Slash command buttons). Right-click > Duplicate and change the response to make more. Needs KeyDeck 1.9.0 or newer.",
   "pages": [
     {
       "name": "Ticket replies",
@@ -10,24 +10,32 @@
         {
           "label": "Raid not spawning",
           "hotkey": "",
-          "text": "/reply{wait 1}{tab}General Support{wait 1.5}{tab}Raid Not Spawning{wait 2}{tab}{wait 0.5}{enter}",
+          "text": "",
           "mode": "type",
           "enter": false,
           "enabled": true,
           "color": "#c0392b",
-          "action": "text",
-          "goto": ""
+          "action": "reply",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "General Support",
+          "opt2": "Raid Not Spawning",
+          "opt3": ""
         },
         {
           "label": "TEMPLATE - edit me",
           "hotkey": "",
-          "text": "/reply{wait 1}{tab}CATEGORY{wait 1.5}{tab}RESPONSE{wait 2}{tab}{wait 0.5}{enter}",
+          "text": "",
           "mode": "type",
           "enter": false,
           "enabled": true,
           "color": "#3a3d46",
-          "action": "text",
-          "goto": ""
+          "action": "reply",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "General Support",
+          "opt2": "RESPONSE NAME HERE",
+          "opt3": ""
         }
       ]
     }
