@@ -1,6 +1,6 @@
 {
   "keydeck_export": 1,
-  "app_version": "1.12.0",
+  "app_version": "1.13.0",
   "pages": [
     {
       "name": "Main",
@@ -187,7 +187,7 @@
           "opt3": ""
         },
         {
-          "label": "SKin refresh",
+          "label": "Skin refresh",
           "hotkey": "",
           "text": "Press Esc on your keyboard go to inventory for your skin items and hit refresh button",
           "mode": "paste",
