@@ -1,0 +1,166 @@
+{
+  "keydeck_export": 1,
+  "app_version": "1.8.0",
+  "pages": [
+    {
+      "name": "Main",
+      "id": "0ebfd010ea",
+      "binds": [
+        {
+          "label": "Hello",
+          "hotkey": "",
+          "text": "Hello!{, welcome in! Glad you made it.| and welcome! Make yourself at home.|! Great to have you here.|, welcome aboard! Pull up a chair.| there, welcome! Hope you enjoy your stay.}",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#16a085",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "Thank you message",
+          "hotkey": "alt+3",
+          "text": "Thank you for playing Brits PVE Worlds. We are happy to have you here. If you need further assistance please feel free to open a ticket and one of our staff members will be happy to assist you.",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#2980b9",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "Warning ticket closing",
+          "hotkey": "alt+1",
+          "text": "## ⚠️ **__Ticket Closing Soon__** ⚠️\n> **If we don't get a response** \n> **Ticket Will Be Closed In: 10 Minutes** ⏲️",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#c0392b",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "Just Hello",
+          "hotkey": "",
+          "text": "{Hello!|Hey there!|Hi, welcome in!|What's up!|Yo, glad you're here!|Howdy!|Hey hey!|Good to see you!|Hiya!|Welcome, friend!}",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#16a085",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "Recoverbody",
+          "hotkey": "",
+          "text": "/recovercorpse (clipboard)",
+          "mode": "paste",
+          "enter": false,
+          "enabled": true,
+          "color": "#8e44ad",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "NODES",
+          "hotkey": "",
+          "text": "/locatenodes",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#e84393",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "Nighttime. no reply",
+          "hotkey": "",
+          "text": "Hey, we know its late for your region.. But do not worry we have your ticket transcript saved and ready to help you again when the timing works better for you! 🙂",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#d35400",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "TP {STEAM ID}",
+          "hotkey": "",
+          "text": "/tp {clipboard}",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#16a085",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "outpost",
+          "hotkey": "",
+          "text": "/home 1",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#f39c12",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "bandit",
+          "hotkey": "",
+          "text": "/home 3",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#d35400",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "test",
+          "hotkey": "",
+          "text": "/reply{wait 1}{tab}General Support{wait 1.5}{tab}Raid Not Spawning{wait 2}{tab}{wait 0.5}{enter}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#27ae60",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "LFG DOWN",
+          "hotkey": "",
+          "text": "unfortunately LFG is Disabled until wipe",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#c0392b",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "SKin refresh",
+          "hotkey": "",
+          "text": "Press Esc on your keyboard go to inventory for your skin items and hit refresh button",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#f39c12",
+          "action": "text",
+          "goto": ""
+        },
+        {
+          "label": "Teddy steam id",
+          "hotkey": "",
+          "text": "76561198055324725",
+          "mode": "paste",
+          "enter": false,
+          "enabled": true,
+          "color": "#27ae60",
+          "action": "text",
+          "goto": ""
+        }
+      ]
+    }
+  ]
+}
