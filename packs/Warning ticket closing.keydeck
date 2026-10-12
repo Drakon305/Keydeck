@@ -1,0 +1,27 @@
+{
+  "keydeck_export": 1,
+  "app_version": "1.11.0",
+  "pages": [
+    {
+      "name": "Warning ticket closing",
+      "id": "a4e32779f7",
+      "binds": [
+        {
+          "label": "Warning ticket closing",
+          "hotkey": "",
+          "text": "## ⚠️ **__Ticket Closing Soon__** ⚠️\n> **If we don't get a response** \n> **Ticket Will Be Closed In: 10 Minutes** ⏲️",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#c0392b",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        }
+      ]
+    }
+  ]
+}
