@@ -1,6 +1,6 @@
 {
   "keydeck_export": 1,
-  "app_version": "1.8.0",
+  "app_version": "1.12.0",
   "pages": [
     {
       "name": "Main",
@@ -15,7 +15,11 @@
           "enabled": true,
           "color": "#16a085",
           "action": "text",
-          "goto": ""
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
         },
         {
           "label": "Thank you message",
@@ -26,7 +30,11 @@
           "enabled": true,
           "color": "#2980b9",
           "action": "text",
-          "goto": ""
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
         },
         {
           "label": "Warning ticket closing",
@@ -37,7 +45,11 @@
           "enabled": true,
           "color": "#c0392b",
           "action": "text",
-          "goto": ""
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
         },
         {
           "label": "Just Hello",
@@ -48,7 +60,11 @@
           "enabled": true,
           "color": "#16a085",
           "action": "text",
-          "goto": ""
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
         },
         {
           "label": "Recoverbody",
@@ -59,7 +75,11 @@
           "enabled": true,
           "color": "#8e44ad",
           "action": "text",
-          "goto": ""
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
         },
         {
           "label": "NODES",
@@ -70,7 +90,11 @@
           "enabled": true,
           "color": "#e84393",
           "action": "text",
-          "goto": ""
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
         },
         {
           "label": "Nighttime. no reply",
@@ -81,7 +105,11 @@
           "enabled": true,
           "color": "#d35400",
           "action": "text",
-          "goto": ""
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
         },
         {
           "label": "TP {STEAM ID}",
@@ -92,7 +120,11 @@
           "enabled": true,
           "color": "#16a085",
           "action": "text",
-          "goto": ""
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
         },
         {
           "label": "outpost",
@@ -103,7 +135,11 @@
           "enabled": true,
           "color": "#f39c12",
           "action": "text",
-          "goto": ""
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
         },
         {
           "label": "bandit",
@@ -114,7 +150,11 @@
           "enabled": true,
           "color": "#d35400",
           "action": "text",
-          "goto": ""
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
         },
         {
           "label": "test",
@@ -125,7 +165,11 @@
           "enabled": true,
           "color": "#27ae60",
           "action": "text",
-          "goto": ""
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
         },
         {
           "label": "LFG DOWN",
@@ -136,7 +180,11 @@
           "enabled": true,
           "color": "#c0392b",
           "action": "text",
-          "goto": ""
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
         },
         {
           "label": "SKin refresh",
@@ -147,18 +195,11 @@
           "enabled": true,
           "color": "#f39c12",
           "action": "text",
-          "goto": ""
-        },
-        {
-          "label": "Teddy steam id",
-          "hotkey": "",
-          "text": "76561198055324725",
-          "mode": "paste",
-          "enter": false,
-          "enabled": true,
-          "color": "#27ae60",
-          "action": "text",
-          "goto": ""
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
         }
       ]
     }
