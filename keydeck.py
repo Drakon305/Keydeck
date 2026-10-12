@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.10.0"
+VERSION = "1.11.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -1741,91 +1741,6 @@ class SettingsWindow:
 
 
 
-class ButtonPicker:
-    """Choose single buttons from a Library set and add them to one of your pages."""
-
-    def __init__(self, app, set_name, pages, parent=None):
-        self.app = app
-        self.binds = [b for pg in pages for b in pg["binds"] if b.get("action") != "page"]
-        skipped = sum(1 for pg in pages for b in pg["binds"] if b.get("action") == "page")
-        w = self.win = tk.Toplevel(parent or app.root)
-        w.title(f"Pick buttons - {set_name}")
-        w.geometry("480x480")
-        w.minsize(380, 300)
-        w.attributes("-topmost", True)
-
-        top = ttk.Frame(w, padding=(12, 12, 12, 4))
-        top.pack(fill="x")
-        ttk.Label(top, text="Tick the buttons you want:", font=("Segoe UI", 10, "bold")).pack(anchor="w")
-        if skipped:
-            ttk.Label(top, foreground="#888888", font=("Segoe UI", 8), wraplength=440,
-                      text=f"{skipped} go-to-page button(s) aren't listed - they only work with the whole set."
-                      ).pack(anchor="w")
-
-        holder = ttk.Frame(w, padding=(12, 4))
-        holder.pack(fill="both", expand=True)
-        canvas = tk.Canvas(holder, highlightthickness=0, bg="#ffffff")
-        sb = ttk.Scrollbar(holder, orient="vertical", command=canvas.yview)
-        inner = tk.Frame(canvas, bg="#ffffff")
-        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        wid = canvas.create_window((0, 0), window=inner, anchor="nw")
-        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(wid, width=e.width))
-        canvas.configure(yscrollcommand=sb.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        sb.pack(side="right", fill="y")
-
-        self.vars = []
-        for b in self.binds:
-            v = tk.BooleanVar(value=False)
-            self.vars.append(v)
-            row = tk.Frame(inner, bg="#ffffff", pady=3)
-            row.pack(fill="x")
-            tk.Label(row, bg=b["color"], width=2).pack(side="left", padx=(2, 6))
-            ttk.Checkbutton(row, variable=v).pack(side="left")
-            if b.get("action") == "reply":
-                detail = " / ".join([b.get("cmd", "")] + slash_options(b))
-                title = b["label"] or (slash_options(b) or ["(empty)"])[-1]
-            else:
-                detail = " ".join(b["text"].split())
-                title = b["label"] or detail[:30] or "(empty)"
-            txt = tk.Frame(row, bg="#ffffff")
-            txt.pack(side="left", fill="x", expand=True)
-            tk.Label(txt, text=title, bg="#ffffff", font=("Segoe UI", 9, "bold"), anchor="w").pack(anchor="w")
-            tk.Label(txt, text=detail[:70] + ("…" if len(detail) > 70 else ""), bg="#ffffff",
-                     fg="#777777", font=("Segoe UI", 8), anchor="w").pack(anchor="w")
-            for wdg in (row, txt) + tuple(txt.winfo_children()):
-                wdg.bind("<Button-1>", lambda e, v=v: v.set(not v.get()))
-
-        bottom = ttk.Frame(w, padding=12)
-        bottom.pack(fill="x")
-        ttk.Button(bottom, text="Select all", command=lambda: [v.set(True) for v in self.vars]).pack(side="left")
-        ttk.Label(bottom, text="Add to page:").pack(side="left", padx=(12, 4))
-        self.page_box = ttk.Combobox(bottom, values=[pg["name"] for pg in app.cfg["pages"]],
-                                     state="readonly", width=14)
-        self.page_box.current(app.cfg["current_page"])
-        self.page_box.pack(side="left")
-        ttk.Button(bottom, text="Cancel", command=w.destroy).pack(side="right")
-        ttk.Button(bottom, text="Add", command=self.add).pack(side="right", padx=(0, 6))
-        if not self.binds:
-            tk.Label(inner, text="There are no single buttons in this set.", bg="#ffffff",
-                     fg="#777777", pady=10).pack(anchor="w")
-        force_foreground(w)
-
-    def add(self):
-        chosen = [b for b, v in zip(self.binds, self.vars) if v.get()]
-        if not chosen:
-            messagebox.showinfo(APP_NAME, "Tick at least one button first.", parent=self.win)
-            return
-        k = self.page_box.current()
-        if k < 0:
-            k = self.app.cfg["current_page"]
-        cleared = self.app.add_buttons_to_page(chosen, k)
-        msg = f'Added {len(chosen)} button(s) to "{self.app.cfg["pages"][k]["name"]}".'
-        if cleared:
-            msg += (f"\n\n{cleared} hotkey(s) were left off because you already use those keys.")
-        messagebox.showinfo(APP_NAME, msg, parent=self.win)
-        self.win.destroy()
-
 
 class SubmitDialog:
     """Send one page to the Library admin for approval."""
@@ -1909,26 +1824,35 @@ class SubmitDialog:
 # ---------------------------------------------------------------- library ---
 
 class LibraryWindow:
-    """Browse the shared button packs and add the ones you want."""
+    """One shared catalog of every button people have shared.
+    Tick as many as you like (single buttons or whole groups) and add them in one go."""
+
+    NEW_PAGE = "➕ New page…"
 
     def __init__(self, app):
         self.app = app
         w = self.win = tk.Toplevel(app.root)
         w.title("KeyDeck Button Library")
-        w.geometry("560x460")
-        w.minsize(420, 300)
+        w.geometry("640x580")
+        w.minsize(480, 360)
         w.attributes("-topmost", True)
         w.protocol("WM_DELETE_WINDOW", self.close)
 
         top = ttk.Frame(w, padding=(12, 12, 12, 4))
         top.pack(fill="x")
-        ttk.Label(top, text="Ready-made button sets", font=("Segoe UI", 11, "bold")).pack(anchor="w")
-        ttk.Label(top, foreground="#555555", wraplength=520, justify="left",
-                  text="Add any set as a new page. Your own buttons are never changed. "
-                       "If a set gets improved later, you'll see an Update button here.").pack(anchor="w")
+        ttk.Label(top, text="Button Library", font=("Segoe UI", 12, "bold")).pack(anchor="w")
+        ttk.Label(top, foreground="#555555", wraplength=600, justify="left",
+                  text="Everything people have shared, in one place. Tick the buttons you want "
+                       "(or a whole group), then add them to one of your pages.").pack(anchor="w")
+        sr = ttk.Frame(top)
+        sr.pack(fill="x", pady=(8, 0))
+        ttk.Label(sr, text="🔍 Search").pack(side="left")
+        self.search = tk.StringVar()
+        ent = ttk.Entry(sr, textvariable=self.search)
+        ent.pack(side="left", fill="x", expand=True, padx=(6, 0))
+        self.search.trace_add("write", lambda *a: self._render())
 
-        # scrollable list
-        holder = ttk.Frame(w, padding=(12, 4, 12, 4))
+        holder = ttk.Frame(w, padding=(12, 6, 12, 4))
         holder.pack(fill="both", expand=True)
         self.canvas = tk.Canvas(holder, highlightthickness=0, bg="#ffffff")
         sb = ttk.Scrollbar(holder, orient="vertical", command=self.canvas.yview)
@@ -1943,12 +1867,23 @@ class LibraryWindow:
 
         bottom = ttk.Frame(w, padding=(12, 4, 12, 12))
         bottom.pack(fill="x")
-        ttk.Button(bottom, text="Refresh", command=self.load).pack(side="left")
+        self.count_label = ttk.Label(bottom, text="0 selected", width=11)
+        self.count_label.pack(side="left")
+        ttk.Button(bottom, text="Clear", command=self.clear_selection).pack(side="left", padx=(0, 10))
+        ttk.Label(bottom, text="Add to:").pack(side="left")
+        self.target = ttk.Combobox(bottom, state="readonly", width=16)
+        self.target.pack(side="left", padx=(4, 6))
+        self.add_btn = ttk.Button(bottom, text="Add selected", command=self.add_selected)
+        self.add_btn.pack(side="left")
         ttk.Button(bottom, text="Close", command=self.close).pack(side="right")
+        ttk.Button(bottom, text="Refresh", command=self.load).pack(side="right", padx=(0, 6))
 
-        self.packs = []
+        self.items, self.packs, self.selected = [], [], set()
+        self._subs = self._sub_err = self._err = None
+        self._fill_targets()
         self.load()
         force_foreground(w)
+        ent.focus_set()
 
     def _wheel(self, e):
         try:
@@ -1957,15 +1892,24 @@ class LibraryWindow:
         except tk.TclError:
             pass
 
+    def _fill_targets(self):
+        names = [pg["name"] for pg in self.app.cfg["pages"]]
+        self.target["values"] = names + [self.NEW_PAGE]
+        self.target.current(self.app.cfg["current_page"])
+
+    def _section(self, text):
+        tk.Label(self.list, text=text, bg="#ffffff", fg="#333333", anchor="w",
+                 font=("Segoe UI", 9, "bold"), pady=6).pack(fill="x")
+
     def _message(self, text):
+        tk.Label(self.list, text=text, bg="#ffffff", fg="#555555", wraplength=560,
+                 justify="left", pady=14).pack(anchor="w")
+
+    # ---- loading ----
+    def load(self):
         for c in self.list.winfo_children():
             c.destroy()
-        tk.Label(self.list, text=text, bg="#ffffff", fg="#555555", wraplength=480,
-                 justify="left", pady=20).pack(anchor="w")
-
-    def load(self):
         self._message("Loading the library…")
-
         token = self.app.cfg["panel"]["admin_token"]
 
         def worker():
@@ -1975,114 +1919,145 @@ class LibraryWindow:
                     subs = list_submissions(token)
                 except Exception as e:
                     sub_err = str(e)
+            items, packs, err = [], [], None
             try:
                 packs = fetch_library()
-                err = None
             except Exception as e:
-                packs, err = [], str(e)
-                if "404" in err:
-                    err = None  # no packs folder yet = empty library
-            self.app.ui(self._show, packs, err, subs, sub_err)
+                if "404" not in str(e):  # no packs folder yet = empty library
+                    err = str(e)
+            for pack in packs:
+                try:
+                    pages, _ = download_pack(pack)
+                except Exception as e:
+                    log(f"Library: skipped {pack['key']}: {e}")
+                    continue
+                n = 0
+                for pg in pages:
+                    for b in pg["binds"]:
+                        if b.get("action") == "page":
+                            continue  # only works inside its own set
+                        items.append({"key": f"{pack['key']}#{n}", "group": pack["name"], "bind": b})
+                        n += 1
+            self.app.ui(self._loaded, packs, items, err, subs, sub_err)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _status(self, pack):
-        mine = [pg for pg in self.app.cfg["pages"] if pg.get("pack") == pack["key"]]
-        if not mine:
-            return "new"
-        return "added" if all(pg.get("pack_sha") == pack["sha"] for pg in mine) else "update"
-
-    def _section(self, text):
-        tk.Label(self.list, text=text, bg="#ffffff", fg="#333333", anchor="w",
-                 font=("Segoe UI", 9, "bold"), pady=6).pack(fill="x")
-
-    def _show(self, packs, error, subs=None, sub_err=None):
+    def _loaded(self, packs, items, err, subs, sub_err):
         if not self.win.winfo_exists():
             return
-        self.packs = packs
-        self._subs = subs
+        self.packs, self.items, self._err = packs, items, err
+        self._subs, self._sub_err = subs, sub_err
+        keys = {it["key"] for it in items}
+        self.selected &= keys
+        self._render()
+
+    # ---- the list ----
+    @staticmethod
+    def _summary(b):
+        if b.get("action") == "reply":
+            opts = slash_options(b)
+            return (b["label"] or (opts[-1] if opts else "(empty)"),
+                    " / ".join([b.get("cmd", "")] + opts))
+        detail = " ".join(b["text"].split())
+        return b["label"] or detail[:30] or "(empty)", detail
+
+    def _render(self):
+        if not self.win.winfo_exists():
+            return
         for c in self.list.winfo_children():
             c.destroy()
-        if self.app.cfg["panel"]["admin_token"]:
-            self._show_submissions(subs, sub_err)
+        if self.app.cfg["panel"]["admin_token"] and (self._subs is not None or self._sub_err):
+            self._show_submissions(self._subs, self._sub_err)
             self._section("LIBRARY")
-        if error:
-            tk.Label(self.list, text=f"Couldn't load the library.\n\n{error}", bg="#ffffff",
-                     fg="#555555", wraplength=480, justify="left", pady=10).pack(anchor="w")
+        if self._err:
+            self._message(f"Couldn't load the library.\n\n{self._err}")
+        q = self.search.get().strip().lower()
+        groups = {}
+        for it in self.items:
+            title, detail = self._summary(it["bind"])
+            if q and q not in f"{title} {detail} {it['group']}".lower():
+                continue
+            groups.setdefault(it["group"], []).append((it, title, detail))
+        if not groups and not self._err:
+            self._message("No buttons match your search." if q else "The library is empty right now.")
+        for group, rows in groups.items():
+            head = tk.Frame(self.list, bg="#eef1f6", pady=4, padx=6)
+            head.pack(fill="x", pady=(6, 0))
+            tk.Label(head, text=f"{group}  ({len(rows)})", bg="#eef1f6",
+                     font=("Segoe UI", 9, "bold"), anchor="w").pack(side="left")
+            keys = [it["key"] for it, _, _ in rows]
+            all_on = all(k in self.selected for k in keys)
+            tog = tk.Label(head, text="Unselect all" if all_on else "Select all", bg="#eef1f6",
+                           fg="#2980b9", cursor="hand2", font=("Segoe UI", 8, "underline"))
+            tog.pack(side="right")
+            tog.bind("<Button-1>", lambda e, ks=keys, on=all_on: self._set_many(ks, not on))
+            for it, title, detail in rows:
+                self._row(it, title, detail)
+        self._update_count()
+
+    def _row(self, it, title, detail):
+        b, key = it["bind"], it["key"]
+        row = tk.Frame(self.list, bg="#ffffff", pady=3)
+        row.pack(fill="x")
+        var = tk.BooleanVar(value=key in self.selected)
+
+        def toggled(*_):
+            (self.selected.add if var.get() else self.selected.discard)(key)
+            self._update_count()
+        ttk.Checkbutton(row, variable=var, command=toggled).pack(side="left", padx=(4, 0))
+        tk.Label(row, bg=b["color"], width=2).pack(side="left", padx=(2, 8))
+        txt = tk.Frame(row, bg="#ffffff")
+        txt.pack(side="left", fill="x", expand=True)
+        tk.Label(txt, text=title, bg="#ffffff", font=("Segoe UI", 9, "bold"), anchor="w").pack(anchor="w")
+        tk.Label(txt, text=detail[:90] + ("…" if len(detail) > 90 else ""), bg="#ffffff",
+                 fg="#777777", font=("Segoe UI", 8), anchor="w").pack(anchor="w")
+
+        def click(e):
+            var.set(not var.get())
+            toggled()
+        for wdg in (row, txt) + tuple(txt.winfo_children()):
+            wdg.bind("<Button-1>", click)
+
+    def _set_many(self, keys, on):
+        for k in keys:
+            (self.selected.add if on else self.selected.discard)(k)
+        self._render()
+
+    def clear_selection(self):
+        self.selected.clear()
+        self._render()
+
+    def _update_count(self):
+        n = len(self.selected)
+        self.count_label.config(text=f"{n} selected")
+        self.add_btn.config(text=f"Add {n}" if n else "Add selected")
+
+    # ---- adding ----
+    def add_selected(self):
+        chosen = [it["bind"] for it in self.items if it["key"] in self.selected]
+        if not chosen:
+            messagebox.showinfo(APP_NAME, "Tick at least one button first.", parent=self.win)
             return
-        if not packs:
-            tk.Label(self.list, text="The library is empty right now.", bg="#ffffff",
-                     fg="#555555", pady=10).pack(anchor="w")
-            return
-        for pack in packs:
-            row = tk.Frame(self.list, bg="#ffffff", pady=8)
-            row.pack(fill="x")
-            tk.Frame(self.list, bg="#e5e5e5", height=1).pack(fill="x")
-            info = tk.Frame(row, bg="#ffffff")
-            info.pack(side="left", fill="x", expand=True)
-            tk.Label(info, text=pack["name"], bg="#ffffff", font=("Segoe UI", 10, "bold"),
-                     anchor="w").pack(anchor="w")
-            status = self._status(pack)
-            note = {"new": "", "added": "Added - you have the latest version",
-                    "update": "An updated version is available"}[status]
-            if note:
-                tk.Label(info, text=note, bg="#ffffff", anchor="w",
-                         fg="#27ae60" if status == "added" else "#d35400",
-                         font=("Segoe UI", 8)).pack(anchor="w")
-            label = {"new": "Add", "added": "Add again", "update": "Update"}[status]
-            ttk.Button(row, text=label,
-                       command=lambda pk=pack, st=status: self.add(pk, st)).pack(side="right", padx=4)
-            ttk.Button(row, text="Pick buttons",
-                       command=lambda pk=pack: self.pick(pk)).pack(side="right", padx=(0, 4))
-            ttk.Button(row, text="Preview",
-                       command=lambda pk=pack: self.preview(pk)).pack(side="right")
-
-    def _download(self, pack, then):
-        def worker():
-            try:
-                pages, desc = download_pack(pack)
-                self.app.ui(then, pages, desc)
-            except Exception as e:
-                self.app.ui(lambda: messagebox.showerror(
-                    APP_NAME, f"Couldn't download that set.\n\n{e}", parent=self.win))
-        threading.Thread(target=worker, daemon=True).start()
-
-    def pick(self, pack):
-        self._download(pack, lambda pages, desc: ButtonPicker(self.app, pack["name"], pages, parent=self.win))
-
-    def preview(self, pack):
-        def show(pages, desc):
-            lines = [desc.strip(), ""] if desc and desc.strip() else []
-            for pg in pages:
-                lines.append(f"Page: {pg['name']}")
-                for b in pg["binds"][:25]:
-                    title = b["label"] or " ".join(b["text"].split())[:40] or "(empty)"
-                    lines.append(f"   • {title}" + (f"   [{pretty_hotkey(b['hotkey'])}]" if b["hotkey"] else ""))
-                if len(pg["binds"]) > 25:
-                    lines.append(f"   …and {len(pg['binds']) - 25} more")
-            messagebox.showinfo(pack["name"], "\n".join(lines), parent=self.win)
-        self._download(pack, show)
-
-    def add(self, pack, status):
-        def done(pages, desc):
-            mode = "update" if status == "update" else "add"
-            if status == "added" and not messagebox.askyesno(
-                    APP_NAME, f'You already have "{pack["name"]}". Add another copy?', parent=self.win):
+        pages = self.app.cfg["pages"]
+        k = self.target.current()
+        if k < 0 or k >= len(pages):  # new page
+            name = simpledialog.askstring(APP_NAME, "Name for the new page:", initialvalue="From Library",
+                                          parent=self.win)
+            if not name or not name.strip():
                 return
-            if mode == "update" and not messagebox.askyesno(
-                    APP_NAME, f'Update "{pack["name"]}" to the newest version?\n\n'
-                    "Its page(s) will be replaced with the new version. Changes you made "
-                    "to those pages will be lost - your other pages aren't touched.",
-                    parent=self.win):
-                return
-            n, cleared = self.app.install_pack(pages, replace_key=pack["key"] if mode == "update" else None)
-            msg = f'{"Updated" if mode == "update" else "Added"} "{pack["name"]}" ({n} buttons).'
-            if cleared:
-                msg += (f"\n\n{cleared} hotkey(s) were left off because you already use those keys. "
-                        "Right-click a button to give it a new one.")
-            messagebox.showinfo(APP_NAME, msg, parent=self.win)
-            self._show(self.packs, None, getattr(self, "_subs", None))
-        self._download(pack, done)
+            pages.append({"name": unique_name(name.strip()[:30], [pg["name"] for pg in pages]),
+                          "id": new_page_id(), "binds": []})
+            k = len(pages) - 1
+        cleared = self.app.add_buttons_to_page(chosen, k)
+        self.app.switch_page(k)
+        msg = f'Added {len(chosen)} button(s) to "{pages[k]["name"]}".'
+        if cleared:
+            msg += f"\n\n{cleared} hotkey(s) were left off because you already use those keys."
+        messagebox.showinfo(APP_NAME, msg, parent=self.win)
+        self.selected.clear()
+        self._fill_targets()
+        self.target.current(k)
+        self._render()
 
     # ---- admin: submissions ----
     def _show_submissions(self, subs, err):
@@ -2137,8 +2112,8 @@ class LibraryWindow:
         existing = next((pk for pk in self.packs if pk["key"].lower() == filename.lower()), None)
         msg = f'Publish "{sub["name"]}" from {sub["submitter"]} to everyone\'s Library?'
         if existing:
-            msg += (f'\n\nA set called "{existing["name"]}" is already in the Library. It will be '
-                    "REPLACED, and everyone who added it will be offered an Update.")
+            msg += (f'\n\nSomething called "{existing["name"]}" is already in the Library. '
+                    "It will be REPLACED by this one.")
         if not messagebox.askyesno(APP_NAME, msg, parent=self.win):
             return
 
@@ -2961,6 +2936,40 @@ def selftest():
         r.destroy()
     except Exception:
         problems.append("window toolkit: " + traceback.format_exc())
+    try:  # open the Library window with sample buttons, select, search, close
+        r = tk.Tk()
+        r.withdraw()
+
+        class _FakeApp:
+            pass
+        fa = _FakeApp()
+        fa.root, fa.library = r, None
+        fa.cfg = json.loads(json.dumps(DEFAULT_CONFIG))
+        for pg in fa.cfg["pages"]:
+            pg["id"] = new_page_id()
+        fa.cfg["binds"] = fa.cfg["pages"][0]["binds"]
+        fa.ui = lambda fn, *a: fn(*a)
+        real_load = LibraryWindow.load
+        LibraryWindow.load = lambda self: None
+        try:
+            lw = LibraryWindow(fa)
+        finally:
+            LibraryWindow.load = real_load
+        items = [{"key": "s#0", "group": "Set", "bind": clean_bind({"label": "Hi", "text": "hello"})},
+                 {"key": "s#1", "group": "Set",
+                  "bind": clean_bind({"action": "reply", "opt1": "General Support", "opt2": "Raid"})},
+                 {"key": "t#0", "group": "Single", "bind": clean_bind({"text": "gg"})}]
+        lw._loaded([], items, None, None, None)
+        lw._set_many(["s#0", "s#1"], True)
+        assert len(lw.selected) == 2
+        lw.search.set("raid")
+        lw.search.set("")
+        lw.clear_selection()
+        assert not lw.selected
+        lw.win.destroy()
+        r.destroy()
+    except Exception:
+        problems.append("library window: " + traceback.format_exc())
     try:
         keyboard.parse_hotkey("ctrl+alt+1")
         import pystray._win32  # noqa: F401

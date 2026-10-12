@@ -115,15 +115,16 @@ Example:
 
 ## 6. Button Library
 
-Click **📦 Library** to see ready-made button sets.
+Click **📦 Library**. It's one big list of every button people have shared, grouped by who/what they came from.
 
-- **Preview** – see what's in a set.
-- **Add** – adds the whole set as a new page. Your own buttons are never changed.
-- **Pick buttons** – tick just the buttons you want and choose which of **your** pages they go on.
-- If a hotkey in the set is one you already use, it's left off the new button (you keep yours).
-- **Update** appears when a set you added has been improved. Updating replaces only that set's page, so edits you made to that page are lost; your other pages are untouched.
+- **🔍 Search** to find buttons by name or text.
+- **Tick** as many buttons as you want, from any group. Click anywhere on a row to tick it.
+- **Select all** on a group header ticks the whole group.
+- **Add to:** pick one of your pages, or **➕ New page…**, then click **Add**.
+- If a hotkey in an added button is one you already use, it's left off (you keep yours).
+- Go-to-page buttons aren't listed (they only work inside their own set).
 
-**Want your buttons in the Library?** Right-click a single button → **Submit to Library…**, or submit a whole page: right-click the tab → **Submit to Library…** → fill in a name and what it's for → **Send**. Drakon gets it for approval; once approved, it shows up in everyone's Library.
+**Sharing your buttons:** right-click a single button → **Submit to Library…**, or submit a whole page: right-click the tab → **Submit to Library…**. Drakon approves it, then it shows up in everyone's Library.
 
 ---
 
