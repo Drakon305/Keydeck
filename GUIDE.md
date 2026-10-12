@@ -23,7 +23,7 @@ From then on, open KeyDeck from the Desktop shortcut.
 | **📦 Library** | Browse ready-made button sets and add the ones you want. |
 | **⚙ Settings** | All options (see section 8). |
 | **Tabs** (Main, Game, …) | Your pages. Click to switch, or scroll the mouse wheel over them. |
-| **The buttons** | Click to post. **Right-click** any button for **Edit / Duplicate / Delete**. |
+| **The buttons** | Click to post. **Right-click** any button for **Edit / Duplicate / Submit to Library / Delete**. |
 
 - **Move it:** drag the title bar.
 - **Resize it:** drag any edge or corner. The buttons stretch to fill.
@@ -118,11 +118,12 @@ Example:
 Click **📦 Library** to see ready-made button sets.
 
 - **Preview** – see what's in a set.
-- **Add** – adds it as a new page. Your own buttons are never changed.
+- **Add** – adds the whole set as a new page. Your own buttons are never changed.
+- **Pick buttons** – tick just the buttons you want and choose which of **your** pages they go on.
 - If a hotkey in the set is one you already use, it's left off the new button (you keep yours).
 - **Update** appears when a set you added has been improved. Updating replaces only that set's page, so edits you made to that page are lost; your other pages are untouched.
 
-**Want your buttons in the Library?** Build them on their own page → right-click the tab → **Submit to Library…** → fill in a name and what it's for → **Send**. Drakon gets it for approval; once approved, it shows up in everyone's Library.
+**Want your buttons in the Library?** Right-click a single button → **Submit to Library…**, or submit a whole page: right-click the tab → **Submit to Library…** → fill in a name and what it's for → **Send**. Drakon gets it for approval; once approved, it shows up in everyone's Library.
 
 ---
 

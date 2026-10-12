@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.9.0"
+VERSION = "1.10.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -1223,6 +1223,7 @@ class Panel:
         m = tk.Menu(self.win, tearoff=0)
         m.add_command(label="Edit…", command=lambda: self.app.edit_bind(i))
         m.add_command(label="Duplicate", command=lambda: self.app.duplicate_bind(i))
+        m.add_command(label="Submit to Library…", command=lambda: self.app.submit_button(i))
         m.add_separator()
         m.add_command(label="Delete", command=lambda: self.app.delete_bind(i))
         try:
@@ -1740,6 +1741,92 @@ class SettingsWindow:
 
 
 
+class ButtonPicker:
+    """Choose single buttons from a Library set and add them to one of your pages."""
+
+    def __init__(self, app, set_name, pages, parent=None):
+        self.app = app
+        self.binds = [b for pg in pages for b in pg["binds"] if b.get("action") != "page"]
+        skipped = sum(1 for pg in pages for b in pg["binds"] if b.get("action") == "page")
+        w = self.win = tk.Toplevel(parent or app.root)
+        w.title(f"Pick buttons - {set_name}")
+        w.geometry("480x480")
+        w.minsize(380, 300)
+        w.attributes("-topmost", True)
+
+        top = ttk.Frame(w, padding=(12, 12, 12, 4))
+        top.pack(fill="x")
+        ttk.Label(top, text="Tick the buttons you want:", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        if skipped:
+            ttk.Label(top, foreground="#888888", font=("Segoe UI", 8), wraplength=440,
+                      text=f"{skipped} go-to-page button(s) aren't listed - they only work with the whole set."
+                      ).pack(anchor="w")
+
+        holder = ttk.Frame(w, padding=(12, 4))
+        holder.pack(fill="both", expand=True)
+        canvas = tk.Canvas(holder, highlightthickness=0, bg="#ffffff")
+        sb = ttk.Scrollbar(holder, orient="vertical", command=canvas.yview)
+        inner = tk.Frame(canvas, bg="#ffffff")
+        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        wid = canvas.create_window((0, 0), window=inner, anchor="nw")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(wid, width=e.width))
+        canvas.configure(yscrollcommand=sb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+        self.vars = []
+        for b in self.binds:
+            v = tk.BooleanVar(value=False)
+            self.vars.append(v)
+            row = tk.Frame(inner, bg="#ffffff", pady=3)
+            row.pack(fill="x")
+            tk.Label(row, bg=b["color"], width=2).pack(side="left", padx=(2, 6))
+            ttk.Checkbutton(row, variable=v).pack(side="left")
+            if b.get("action") == "reply":
+                detail = " / ".join([b.get("cmd", "")] + slash_options(b))
+                title = b["label"] or (slash_options(b) or ["(empty)"])[-1]
+            else:
+                detail = " ".join(b["text"].split())
+                title = b["label"] or detail[:30] or "(empty)"
+            txt = tk.Frame(row, bg="#ffffff")
+            txt.pack(side="left", fill="x", expand=True)
+            tk.Label(txt, text=title, bg="#ffffff", font=("Segoe UI", 9, "bold"), anchor="w").pack(anchor="w")
+            tk.Label(txt, text=detail[:70] + ("…" if len(detail) > 70 else ""), bg="#ffffff",
+                     fg="#777777", font=("Segoe UI", 8), anchor="w").pack(anchor="w")
+            for wdg in (row, txt) + tuple(txt.winfo_children()):
+                wdg.bind("<Button-1>", lambda e, v=v: v.set(not v.get()))
+
+        bottom = ttk.Frame(w, padding=12)
+        bottom.pack(fill="x")
+        ttk.Button(bottom, text="Select all", command=lambda: [v.set(True) for v in self.vars]).pack(side="left")
+        ttk.Label(bottom, text="Add to page:").pack(side="left", padx=(12, 4))
+        self.page_box = ttk.Combobox(bottom, values=[pg["name"] for pg in app.cfg["pages"]],
+                                     state="readonly", width=14)
+        self.page_box.current(app.cfg["current_page"])
+        self.page_box.pack(side="left")
+        ttk.Button(bottom, text="Cancel", command=w.destroy).pack(side="right")
+        ttk.Button(bottom, text="Add", command=self.add).pack(side="right", padx=(0, 6))
+        if not self.binds:
+            tk.Label(inner, text="There are no single buttons in this set.", bg="#ffffff",
+                     fg="#777777", pady=10).pack(anchor="w")
+        force_foreground(w)
+
+    def add(self):
+        chosen = [b for b, v in zip(self.binds, self.vars) if v.get()]
+        if not chosen:
+            messagebox.showinfo(APP_NAME, "Tick at least one button first.", parent=self.win)
+            return
+        k = self.page_box.current()
+        if k < 0:
+            k = self.app.cfg["current_page"]
+        cleared = self.app.add_buttons_to_page(chosen, k)
+        msg = f'Added {len(chosen)} button(s) to "{self.app.cfg["pages"][k]["name"]}".'
+        if cleared:
+            msg += (f"\n\n{cleared} hotkey(s) were left off because you already use those keys.")
+        messagebox.showinfo(APP_NAME, msg, parent=self.win)
+        self.win.destroy()
+
+
 class SubmitDialog:
     """Send one page to the Library admin for approval."""
     _last_sent = 0.0
@@ -1755,8 +1842,10 @@ class SubmitDialog:
         f.columnconfigure(1, weight=1)
         f.rowconfigure(3, weight=1)
         n = len(page["binds"])
+        what = (f'the button "{page["name"]}"' if n == 1 and page.get("_single")
+                else f'the page "{page["name"]}" ({n} buttons)')
         ttk.Label(f, wraplength=410, justify="left",
-                  text=f'Send the page "{page["name"]}" ({n} buttons) to the Library admin. '
+                  text=f"Send {what} to the Library admin. "
                        "If it's approved, everyone can add it from their Library."
                   ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
         ttk.Label(f, text="Set name").grid(row=1, column=0, sticky="w")
@@ -1943,6 +2032,8 @@ class LibraryWindow:
             label = {"new": "Add", "added": "Add again", "update": "Update"}[status]
             ttk.Button(row, text=label,
                        command=lambda pk=pack, st=status: self.add(pk, st)).pack(side="right", padx=4)
+            ttk.Button(row, text="Pick buttons",
+                       command=lambda pk=pack: self.pick(pk)).pack(side="right", padx=(0, 4))
             ttk.Button(row, text="Preview",
                        command=lambda pk=pack: self.preview(pk)).pack(side="right")
 
@@ -1955,6 +2046,9 @@ class LibraryWindow:
                 self.app.ui(lambda: messagebox.showerror(
                     APP_NAME, f"Couldn't download that set.\n\n{e}", parent=self.win))
         threading.Thread(target=worker, daemon=True).start()
+
+    def pick(self, pack):
+        self._download(pack, lambda pages, desc: ButtonPicker(self.app, pack["name"], pages, parent=self.win))
 
     def preview(self, pack):
         def show(pages, desc):
@@ -2571,6 +2665,32 @@ class App:
                 "Export this page..., and send the file to the Library admin.", parent=self.root)
             return
         SubmitDialog(self, pg)
+
+    def submit_button(self, i):
+        b = self.cfg["binds"][i]
+        if b.get("action") == "page":
+            messagebox.showinfo(APP_NAME, "Go-to-page buttons only work with their own pages, so they "
+                                "can't be submitted on their own. Submit the whole page instead "
+                                "(right-click its tab).", parent=self.root)
+            return
+        if not submit_token():
+            messagebox.showinfo(
+                APP_NAME, "Submitting isn't switched on in this copy yet.", parent=self.root)
+            return
+        name = b.get("label") or " ".join(b.get("text", "").split())[:30] or "Button"
+        clean = {k: v for k, v in b.items() if k != "hotkey"}
+        clean["hotkey"] = ""  # hotkeys are personal
+        SubmitDialog(self, {"name": name[:30], "id": None, "binds": [clean], "_single": True})
+
+    def add_buttons_to_page(self, binds, k):
+        """Add copies of library buttons to one of your pages. Returns hotkeys left off."""
+        copies = [clean_bind(dict(b)) for b in binds]
+        cleared = self._clear_hotkey_clashes([{"binds": copies}])
+        if self.editor:
+            self.editor.close()
+        self.cfg["pages"][k]["binds"].extend(copies)
+        self.apply()
+        return cleared
 
     def set_admin_key(self, parent=None, then=None):
         parent = parent or self.root
