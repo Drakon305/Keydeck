@@ -1,0 +1,28 @@
+{
+  "keydeck_export": 1,
+  "app_version": "1.13.0",
+  "pages": [
+    {
+      "name": "ByE!",
+      "id": "e16e3876b7",
+      "binds": [
+        {
+          "label": "ByE!",
+          "hotkey": "",
+          "text": "Have a wonderful day, and thank you for playing Brits PvE Worlds 2.0! :D",
+          "mode": "paste",
+          "enter": false,
+          "enabled": true,
+          "color": "#2980b9",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        }
+      ]
+    }
+  ],
+  "description": "Ticket response Bye"
+}
