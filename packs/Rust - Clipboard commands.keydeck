@@ -1,0 +1,58 @@
+{
+  "keydeck_export": 1,
+  "app_version": "1.14.0",
+  "description": "Copy a player's SteamID first, then press the button.",
+  "pages": [
+    {
+      "name": "Rust - Clipboard commands",
+      "id": "6c8c948174",
+      "binds": [
+        {
+          "label": "SPECTATE (copied)",
+          "hotkey": "",
+          "text": "{enter}/spec {clipboard}{enter}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#16a085",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "TELEPORT (copied)",
+          "hotkey": "",
+          "text": "{enter}/tp {clipboard}{enter}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#16a085",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "RECOVER CORPSE (copied)",
+          "hotkey": "",
+          "text": "{enter}/recovercorpse {clipboard}{enter}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#16a085",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        }
+      ]
+    }
+  ]
+}

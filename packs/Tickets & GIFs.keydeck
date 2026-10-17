@@ -1,0 +1,118 @@
+{
+  "keydeck_export": 1,
+  "app_version": "1.14.0",
+  "description": "Ticket closing warning and reaction GIFs.",
+  "pages": [
+    {
+      "name": "Tickets & GIFs",
+      "id": "afbe91e3f3",
+      "binds": [
+        {
+          "label": "TICKET TIMER",
+          "hotkey": "",
+          "text": "⚠️ Ticket Closing Soon ⚠️\nIf we don't get a response \nTicket Will Be Closed In: 10 Minutes ⏲️",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#f39c12",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "Me arde (hot)",
+          "hotkey": "",
+          "text": "https://tenor.com/view/pica-limonagrio-hora-de-aventura-me-arde-muy-caliente-gif-14864524295327402619",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#e84393",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "Cake & friends",
+          "hotkey": "",
+          "text": "https://giphy.com/gifs/adventure-time-friends-cake-c5PHIq9sXsV6o",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#e84393",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "All your fault",
+          "hotkey": "",
+          "text": "https://tenor.com/view/adventure-time-all-your-fault-lemon-grab-blame-pointing-fingers-gif-9301943",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#e84393",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "Unacceptable!",
+          "hotkey": "",
+          "text": "https://tenor.com/view/adventure-time-unacceptable-earl-of-lemongrab-gif-16269937",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#e84393",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "Thumbs up",
+          "hotkey": "",
+          "text": "https://giphy.com/gifs/adventure-time-thumbs-up-jake-the-dog-HaC3m9r4JFjPi",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#e84393",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "Help is on the way",
+          "hotkey": "",
+          "text": "https://tenor.com/view/help-is-on-the-way-dear-mrs-doubtfire-robin-williams-gif-12917727",
+          "mode": "paste",
+          "enter": true,
+          "enabled": true,
+          "color": "#e84393",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        }
+      ]
+    }
+  ]
+}

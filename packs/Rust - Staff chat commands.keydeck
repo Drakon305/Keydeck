@@ -1,0 +1,103 @@
+{
+  "keydeck_export": 1,
+  "app_version": "1.14.0",
+  "description": "Opens chat, sends the command.",
+  "pages": [
+    {
+      "name": "Rust - Staff chat commands",
+      "id": "552ad3b229",
+      "binds": [
+        {
+          "label": "NV",
+          "hotkey": "",
+          "text": "{enter}/NV{enter}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#2980b9",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "STAFF KIT",
+          "hotkey": "",
+          "text": "{enter}/kit staff{enter}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#2980b9",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "REMOVE A",
+          "hotkey": "",
+          "text": "{enter}/remove a{enter}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#2980b9",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "PROD",
+          "hotkey": "",
+          "text": "{enter}/PROD{enter}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#16a085",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "PROD TEAM",
+          "hotkey": "",
+          "text": "{enter}/PROD2{enter}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#16a085",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "WHO",
+          "hotkey": "",
+          "text": "{enter}/WHO{enter}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#16a085",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        }
+      ]
+    }
+  ]
+}

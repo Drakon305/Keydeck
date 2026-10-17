@@ -1,0 +1,88 @@
+{
+  "keydeck_export": 1,
+  "app_version": "1.14.0",
+  "description": "Desktop, snipping tool, cut/copy/paste. Needs KeyDeck 1.14.0+.",
+  "pages": [
+    {
+      "name": "Windows shortcuts",
+      "id": "d797274b2e",
+      "binds": [
+        {
+          "label": "Show Desktop",
+          "hotkey": "",
+          "text": "{key windows+d}",
+          "mode": "paste",
+          "enter": false,
+          "enabled": true,
+          "color": "#3a3d46",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "Snip Tool",
+          "hotkey": "",
+          "text": "{key windows+shift+s}",
+          "mode": "paste",
+          "enter": false,
+          "enabled": true,
+          "color": "#3a3d46",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "Cut",
+          "hotkey": "",
+          "text": "{key ctrl+x}",
+          "mode": "paste",
+          "enter": false,
+          "enabled": true,
+          "color": "#3a3d46",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "Copy",
+          "hotkey": "",
+          "text": "{key ctrl+c}",
+          "mode": "paste",
+          "enter": false,
+          "enabled": true,
+          "color": "#3a3d46",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "Paste",
+          "hotkey": "",
+          "text": "{key ctrl+v}",
+          "mode": "paste",
+          "enter": false,
+          "enabled": true,
+          "color": "#3a3d46",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "keydeck_export": 1,
+  "app_version": "1.14.0",
+  "description": "Opens the F1 console, runs the command, closes it. Needs KeyDeck 1.14.0+.",
+  "pages": [
+    {
+      "name": "Rust - Console commands (F1)",
+      "id": "8eae37f02d",
+      "binds": [
+        {
+          "label": "VANISH",
+          "hotkey": "",
+          "text": "{key f1}vanish{enter}{key f1}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#c0392b",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "NOCLIP",
+          "hotkey": "",
+          "text": "{key f1}noclip{enter}{key f1}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#c0392b",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "BRIT US",
+          "hotkey": "",
+          "text": "{key f1}connect worlds.us.britspve.com{enter}{key f1}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#c0392b",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "BRIT EU",
+          "hotkey": "",
+          "text": "{key f1}connect worlds.eu.britspve.com{enter}{key f1}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#c0392b",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "DISCONNECT",
+          "hotkey": "",
+          "text": "{key f1}disconnect{enter}{key f1}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#c0392b",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        }
+      ]
+    }
+  ]
+}
