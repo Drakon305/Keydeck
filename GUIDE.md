@@ -68,6 +68,7 @@ Put these anywhere in a button's text:
 | `{enter}` | Presses Enter right there | `Hello!{enter}Welcome in!{enter}` → two messages |
 | `{tab}` | Presses Tab | moves between Discord command options |
 | `{wait 2}` | Pauses 2 seconds | gives Discord/games time to catch up |
+| `{key f1}` | Presses any key or combo | `{key f1}vanish{enter}{key f1}` (Rust console), `{key ctrl+v}`, `{key windows+d}` |
 
 - Round brackets work too: `(enter)`, `(tab)`, `(wait 2)`.
 - You can combine them: `/tp {clipboard}{enter}{wait 2}/heal {clipboard}{enter}`

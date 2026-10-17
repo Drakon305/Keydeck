@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.13.0"
+VERSION = "1.14.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -577,7 +577,9 @@ def expand_text(text, clip=None):
 
 
 # {enter} {tab} {wait 2} - round brackets work too: (enter) (tab) (wait 2)
-_STEP_RE = re.compile(r"[{(]\s*(enter|tab|wait\s*:?\s*(\d+(?:\.\d+)?))\s*[})]", re.IGNORECASE)
+# {key f1} / {key ctrl+v} presses any key or combo
+_STEP_RE = re.compile(r"[{(]\s*(enter|tab|wait\s*:?\s*(\d+(?:\.\d+)?)|key\s+([a-z0-9+ ]+?))\s*[})]",
+                      re.IGNORECASE)
 
 
 def plan_text(text, clip=None):
@@ -604,6 +606,8 @@ def plan_text(text, clip=None):
             steps.append(("enter",))
         elif word.startswith("tab"):
             steps.append(("tab",))
+        elif word.startswith("key"):
+            steps.append(("key", m.group(3).strip().lower()))
         else:
             steps.append(("wait", min(30.0, float(m.group(2)))))
         pos = m.end()
@@ -649,6 +653,8 @@ def describe_plan(steps):
             out.append(" [Enter]\n")
         elif st[0] == "tab":
             out.append(" [Tab] ")
+        elif st[0] == "key":
+            out.append(f" [{st[1].upper()}] ")
         else:
             out.append(f"[wait {st[1]:g}s]")
     return "".join(out)
@@ -1345,7 +1351,7 @@ class BindEditor:
         tip = ttk.Frame(tf)
         tip.pack(fill="x", pady=(3, 0))
         ttk.Label(tip, foreground="#666666", font=("Segoe UI", 8),
-                  text="{a|b} random  {clipboard} copied  {enter} Enter  {tab} Tab  {wait 1} pause"
+                  text="{a|b} random  {clipboard} copied  {enter}  {tab}  {key f1}  {wait 1} pause"
                   ).pack(side="left")
         ttk.Button(tip, text="Preview", command=self.preview).pack(side="right")
 
@@ -2645,6 +2651,13 @@ class App:
                             keyboard.write(step[1], delay=0.003)
                         else:
                             self._paste(step[1])
+                    elif step[0] == "key":
+                        time.sleep(0.05)
+                        try:
+                            keyboard.send(step[1])
+                        except Exception as e:
+                            log(f"Couldn't press key {step[1]!r}: {e}")
+                        time.sleep(0.2)  # let the app react (e.g. a console opening)
                     elif step[0] in ("enter", "tab"):
                         time.sleep(0.06)
                         keyboard.send(step[0])
@@ -3166,6 +3179,10 @@ def selftest():
             ("text", "hi"), ("enter",), ("text", "/tp Bob{enter}"), ("enter",)]
         assert plan_text("a{wait 1.5}b") == [("text", "a"), ("wait", 1.5), ("text", "b")]
         assert plan_text("/x(tab)y (enter)") == [("text", "/x"), ("tab",), ("text", "y "), ("enter",)]
+        assert plan_text("{key F1}vanish{enter}{key f1}") == [("key", "f1"), ("text", "vanish"), ("enter",),
+                                                             ("key", "f1")]
+        assert plan_text("{key ctrl+v}") == [("key", "ctrl+v")]
+        keyboard.parse_hotkey("windows+d")
     except Exception:
         problems.append("backup/share: " + traceback.format_exc())
     try:

@@ -29,6 +29,7 @@ KeyDeck checks for updates when it opens and offers to install new versions itse
   - `{enter}` — presses Enter right there, so one button can send several messages (`Hello!{enter}Welcome in!{enter}`)
   - `{wait 2}` — pauses that many seconds before continuing
   - `{tab}` — presses Tab (moves between Discord slash-command options)
+  - `{key f1}` — presses any key or combo, e.g. `{key f1}vanish{enter}{key f1}` or `{key ctrl+v}`
   - Round brackets work too: `(enter)`, `(tab)`, `(wait 2)`
 - **Backup & share**: Settings → Export buttons… saves a `.keydeck` file; Import buttons… loads one (add alongside yours, or replace). Right-click a tab to export just that page.
 - Settings → **Uninstall** removes it cleanly
