@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.17.1"
+VERSION = "1.17.2"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -1199,10 +1199,7 @@ class Panel:
         m.add_separator()
         m.add_command(label="Delete page", command=lambda: self.app.delete_page(k),
                       state="normal" if n > 1 else "disabled")
-        try:
-            m.tk_popup(e.x_root, e.y_root)
-        finally:
-            m.grab_release()
+        self._popup(m, e)
 
     def apply_no_focus(self):
         try:
@@ -1213,7 +1210,10 @@ class Panel:
     def _popup(self, m, e):
         # right-click menus need KeyDeck focused to work (and close) properly
         force_foreground(self.win)
-        self._popup(m, e)
+        try:
+            m.tk_popup(e.x_root, e.y_root)
+        finally:
+            m.grab_release()
 
     # build the button grid
     def rebuild(self):
@@ -3381,6 +3381,9 @@ def focustest():
     user32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
     app = App()
     app._updating = True  # no update prompts during the test
+    errors = []
+    app.root.report_callback_exception = lambda *exc: errors.append(
+        "".join(traceback.format_exception(*exc))[-600:])
     word = "focustest123"
     pg2 = {"name": "Other", "id": new_page_id(),
            "binds": [clean_bind({"label": "OTHER", "text": "otherpage321", "hotkey": "ctrl+shift+f6"})]}
@@ -3510,6 +3513,31 @@ def focustest():
         log(f"FOCUSTEST key events seen: {len(seen)} {seen[:12]}")
         return res
 
+    def right_click_round(np):
+        def where():
+            app._set_page(0)
+            app.apply()
+            app.root.update()
+            f = app.panel.grid_frame.winfo_children()[1]
+            t = app.panel.tabs.winfo_children()[0]
+            return (f.winfo_rootx() + f.winfo_width() // 2, f.winfo_rooty() + f.winfo_height() // 2,
+                    t.winfo_rootx() + 5, t.winfo_rooty() + 5)
+        bx, by, tx, ty = on_tk(where)
+        out = {}
+        for name, x, y in (("button_menu", bx, by), ("tab_menu", tx, ty)):
+            n0 = len(errors)
+            user32.SetCursorPos(int(x), int(y))
+            time.sleep(0.2)
+            user32.mouse_event(0x0008, 0, 0, 0, 0)  # right down
+            time.sleep(0.05)
+            user32.mouse_event(0x0010, 0, 0, 0, 0)  # right up
+            time.sleep(1.0)
+            press(0x1B)  # Esc closes the menu
+            time.sleep(0.8)
+            out[name] = len(errors) == n0
+        bring(np)
+        return out
+
     def worker():
         proc = None
         try:
@@ -3530,8 +3558,12 @@ def focustest():
             if old is None or new is None:
                 finish(2, f"SKIP: couldn't put Notepad in front (old={old} new={new})")
             hk = hotkey_round(np)
-            msg = f"old way: {old} | no-focus way: {new} | hotkeys: {hk}"
-            if new["lost_focus"] or not new["typed"] or hk is None or not all(hk.values()):
+            rc = right_click_round(np)
+            msg = f"old way: {old} | no-focus way: {new} | hotkeys: {hk} | right-click: {rc}"
+            if errors:
+                msg += " | errors: " + " || ".join(errors).replace("\n", " / ")
+            if (new["lost_focus"] or not new["typed"] or hk is None or not all(hk.values())
+                    or not all(rc.values()) or errors):
                 finish(1, "FAIL " + msg)
             finish(0, "OK " + msg)
         except Exception:
