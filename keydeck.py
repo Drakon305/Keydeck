@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.18.0"
+VERSION = "1.18.1"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -36,6 +36,11 @@ RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 # Every run writes what it did to %APPDATA%\KeyDeck\startup.log
 
 os.makedirs(CONFIG_DIR, exist_ok=True)
+try:  # keep the previous run's log too, as startup-previous.log
+    if os.path.exists(LOG_PATH) and "--selftest" not in sys.argv and "--focustest" not in sys.argv:
+        os.replace(LOG_PATH, os.path.join(CONFIG_DIR, "startup-previous.log"))
+except Exception:
+    pass
 try:
     _log_file = open(LOG_PATH, "w", encoding="utf-8", buffering=1)
 except Exception:
@@ -1023,6 +1028,28 @@ def self_install_if_needed():
     except Exception:
         fatal("KeyDeck couldn't install:", traceback.format_exc())
     return True
+
+
+# ---- sending keys ---------------------------------------------------------------
+
+def press_keys(combo, hold=0.04):
+    """Press a key or combo like a person would: modifiers first, the key held
+    for a moment, then everything let go. Games read the keyboard once per
+    frame, so an instant down+up (what keyboard.send does) can be missed."""
+    keys = [k.strip() for k in combo.split("+") if k.strip()]
+    if not keys:
+        return
+    *mods, main_key = keys
+    for m in mods:
+        keyboard.press(m)
+        time.sleep(0.02)
+    keyboard.press(main_key)
+    time.sleep(hold)
+    keyboard.release(main_key)
+    time.sleep(0.02)
+    for m in reversed(mods):
+        keyboard.release(m)
+        time.sleep(0.01)
 
 
 # ---- window helpers ------------------------------------------------------------
@@ -2912,7 +2939,11 @@ class App:
     def _on_hotkey(self, b):
         if not self._once_per_press(b["hotkey"]):
             return
-        log(f"Hotkey {b.get('hotkey')} fired")
+        try:
+            where = window_exe_name(user32.GetForegroundWindow()) or "?"
+        except Exception:
+            where = "?"
+        log(f"Hotkey {b.get('hotkey')} fired (in {where})")
         if b.get("action") == "page":
             self.ui(self.goto_page, b.get("goto"), True)
             return
@@ -2939,8 +2970,13 @@ class App:
                 is_slash = b.get("action") == "reply"
                 steps = (slash_plan(b, self.cfg["panel"]["slash_speed"]) if is_slash
                          else plan_text(b["text"]))
+                try:
+                    log(f"Posting \"{b.get('label') or b['text'][:20]}\" into "
+                        f"{window_exe_name(user32.GetForegroundWindow()) or '?'}")
+                except Exception:
+                    pass
                 if b.get("enter_before") and not is_slash:  # e.g. open Rust chat first
-                    keyboard.send("enter")
+                    press_keys("enter")
                     time.sleep(0.25)
                 for step in steps:
                     if step[0] == "text":
@@ -2951,19 +2987,19 @@ class App:
                     elif step[0] == "key":
                         time.sleep(0.05)
                         try:
-                            keyboard.send(step[1])
+                            press_keys(step[1])
                         except Exception as e:
                             log(f"Couldn't press key {step[1]!r}: {e}")
                         time.sleep(0.2)  # let the app react (e.g. a console opening)
                     elif step[0] in ("enter", "tab"):
                         time.sleep(0.06)
-                        keyboard.send(step[0])
+                        press_keys(step[0])
                         time.sleep(0.15)  # give the app a moment before the next part
                     else:
                         time.sleep(step[1])
                 if b.get("enter") and not is_slash:  # slash commands already end with Enter
                     time.sleep(0.06)
-                    keyboard.send("enter")
+                    press_keys("enter")
             except Exception:
                 log("Post failed:\n" + traceback.format_exc())
 
@@ -3009,8 +3045,8 @@ class App:
             prev = None
         pyperclip.copy(text)
         time.sleep(0.04)
-        keyboard.send("ctrl+v")
-        time.sleep(0.3)
+        press_keys("ctrl+v")
+        time.sleep(0.4)  # let the app read the clipboard before it's put back
         if prev:  # put back whatever you had copied before
             try:
                 pyperclip.copy(prev)
