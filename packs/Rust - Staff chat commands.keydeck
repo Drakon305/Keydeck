@@ -41,10 +41,10 @@
         {
           "label": "PROD",
           "hotkey": "",
-          "text": "{enter}/PROD{enter}",
+          "text": "/PROD",
           "mode": "type",
-          "enter": false,
-          "enter_before": false,
+          "enter": true,
+          "enter_before": true,
           "enabled": true,
           "color": "#16a085",
           "action": "text",
