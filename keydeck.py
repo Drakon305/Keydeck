@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.17.2"
+VERSION = "1.17.3"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -986,6 +986,31 @@ def set_topmost_quietly(win, on):
     """Stay on top / stop staying on top without grabbing focus from the game."""
     user32.SetWindowPos(get_hwnd(win), ctypes.c_void_p(-1 if on else -2), 0, 0, 0, 0,
                         0x0001 | 0x0002 | 0x0010)  # NOSIZE | NOMOVE | NOACTIVATE
+
+
+class _POINT(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+
+user32.WindowFromPoint.argtypes = [_POINT]
+user32.WindowFromPoint.restype = ctypes.c_void_p
+user32.GetAsyncKeyState.restype = ctypes.c_short
+
+
+def raise_quietly(win):
+    """Bring the window in front of other windows without taking focus."""
+    user32.SetWindowPos(get_hwnd(win), ctypes.c_void_p(0), 0, 0, 0, 0,
+                        0x0001 | 0x0002 | 0x0010)  # HWND_TOP; NOSIZE | NOMOVE | NOACTIVATE
+
+
+def mouse_down_on(win):
+    """True while the left mouse button is held over this window (title bar included)."""
+    if not (user32.GetAsyncKeyState(0x01) & 0x8000):
+        return False
+    pt = _POINT()
+    user32.GetCursorPos(ctypes.byref(pt))
+    w = user32.WindowFromPoint(pt)
+    return bool(w) and user32.GetAncestor(w, 2) == get_hwnd(win)
 
 
 def is_own_window(hwnd):
@@ -2634,6 +2659,13 @@ class App:
             fg = user32.GetForegroundWindow()
             if fg and not is_own_window(fg):
                 self.last_target = fg
+            if self.cfg["panel"]["no_focus"]:
+                # The window can't come to the front by being clicked (that's what
+                # keeps the game focused), so raise it ourselves when you click it.
+                down = mouse_down_on(self.root)
+                if down and not getattr(self, "_was_down", False):
+                    raise_quietly(self.root)
+                self._was_down = down
             self._poll_n = getattr(self, "_poll_n", 0) + 1
             if self._poll_n % 33 == 0:  # about once a second
                 set_no_activate(self.root, self.cfg["panel"]["no_focus"])
@@ -3538,6 +3570,45 @@ def focustest():
         bring(np)
         return out
 
+    def front_round(np):
+        """KeyDeck NOT always-on-top, partly behind Notepad: clicking it must
+        bring it in front while Notepad keeps focus."""
+        def setup():
+            app.cfg["panel"]["always_on_top"] = False
+            app._set_page(0)
+            app.apply()
+            app.root.geometry("420x300+100+100")
+            app.root.update()
+            return get_hwnd(app.root)
+        kd = on_tk(setup)
+        user32.MoveWindow.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                      ctypes.c_int, ctypes.c_int]
+        user32.MoveWindow(np, 330, 60, 700, 500, True)  # covers KeyDeck's right side
+        bring(np)
+        time.sleep(0.8)
+        probe = _POINT(400, 250)  # a spot where both windows overlap
+
+        def top_at_probe():
+            return user32.GetAncestor(user32.WindowFromPoint(probe), 2)
+        if top_at_probe() != np or user32.GetForegroundWindow() != np:
+            return None
+        res = {}
+        for name, x, y in (("click_button", 160, 230), ("click_title_bar", 200, 112)):
+            bring(np)
+            time.sleep(0.6)
+            if top_at_probe() != np:
+                return None
+            user32.SetCursorPos(x, y)
+            time.sleep(0.2)
+            user32.mouse_event(0x0002, 0, 0, 0, 0)
+            time.sleep(0.12)
+            user32.mouse_event(0x0004, 0, 0, 0, 0)
+            time.sleep(1.5)
+            res[name + "_came_to_front"] = top_at_probe() == kd
+            res[name + "_game_kept_focus"] = user32.GetForegroundWindow() == np
+        on_tk(lambda: app.cfg["panel"].update(always_on_top=True))
+        return res
+
     def worker():
         proc = None
         try:
@@ -3559,11 +3630,12 @@ def focustest():
                 finish(2, f"SKIP: couldn't put Notepad in front (old={old} new={new})")
             hk = hotkey_round(np)
             rc = right_click_round(np)
-            msg = f"old way: {old} | no-focus way: {new} | hotkeys: {hk} | right-click: {rc}"
+            fr = front_round(np)
+            msg = f"old way: {old} | no-focus way: {new} | hotkeys: {hk} | right-click: {rc} | to-front: {fr}"
             if errors:
                 msg += " | errors: " + " || ".join(errors).replace("\n", " / ")
             if (new["lost_focus"] or not new["typed"] or hk is None or not all(hk.values())
-                    or not all(rc.values()) or errors):
+                    or not all(rc.values()) or fr is None or not all(fr.values()) or errors):
                 finish(1, "FAIL " + msg)
             finish(0, "OK " + msg)
         except Exception:
