@@ -997,10 +997,13 @@ user32.WindowFromPoint.restype = ctypes.c_void_p
 user32.GetAsyncKeyState.restype = ctypes.c_short
 
 
-def raise_quietly(win):
-    """Bring the window in front of other windows without taking focus."""
-    user32.SetWindowPos(get_hwnd(win), ctypes.c_void_p(0), 0, 0, 0, 0,
-                        0x0001 | 0x0002 | 0x0010)  # HWND_TOP; NOSIZE | NOMOVE | NOACTIVATE
+def raise_quietly(win, stay_on_top):
+    """Bring the window in front of other windows without taking focus.
+    (Windows won't let a background app move itself up with HWND_TOP, but
+    flipping always-on-top on and back off does the same thing.)"""
+    set_topmost_quietly(win, True)
+    if not stay_on_top:
+        set_topmost_quietly(win, False)
 
 
 def mouse_down_on(win):
@@ -2664,7 +2667,8 @@ class App:
                 # keeps the game focused), so raise it ourselves when you click it.
                 down = mouse_down_on(self.root)
                 if down and not getattr(self, "_was_down", False):
-                    raise_quietly(self.root)
+                    raise_quietly(self.root, self.cfg["panel"]["always_on_top"])
+                    log("Clicked KeyDeck: brought it to the front")
                 self._was_down = down
             self._poll_n = getattr(self, "_poll_n", 0) + 1
             if self._poll_n % 33 == 0:  # about once a second
