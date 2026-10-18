@@ -1,7 +1,6 @@
 {
   "keydeck_export": 1,
   "app_version": "1.14.0",
-  "description": "Opens chat, sends the command.",
   "pages": [
     {
       "name": "Rust - Staff chat commands",
@@ -11,21 +10,6 @@
           "label": "NV",
           "hotkey": "",
           "text": "{enter}/NV{enter}",
-          "mode": "type",
-          "enter": false,
-          "enabled": true,
-          "color": "#2980b9",
-          "action": "text",
-          "goto": "",
-          "cmd": "/reply",
-          "opt1": "",
-          "opt2": "",
-          "opt3": ""
-        },
-        {
-          "label": "STAFF KIT",
-          "hotkey": "",
-          "text": "{enter}/kit staff{enter}",
           "mode": "type",
           "enter": false,
           "enabled": true,
@@ -99,5 +83,6 @@
         }
       ]
     }
-  ]
+  ],
+  "description": "Opens chat, sends the command."
 }
