@@ -1,0 +1,29 @@
+{
+  "keydeck_export": 1,
+  "app_version": "1.19.0",
+  "description": "Opens staff websites in your browser. Needs KeyDeck 1.19.0+.",
+  "pages": [
+    {
+      "name": "Staff websites",
+      "id": "c9e6513e6b",
+      "binds": [
+        {
+          "label": "BattleMetrics RCON",
+          "hotkey": "",
+          "text": "https://www.battlemetrics.com/rcon",
+          "mode": "paste",
+          "enter": false,
+          "enter_before": false,
+          "enabled": true,
+          "color": "#2980b9",
+          "action": "url",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        }
+      ]
+    }
+  ]
+}

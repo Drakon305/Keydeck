@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.18.1"
+VERSION = "1.19.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -106,7 +106,8 @@ SWATCHES = ["#3a3d46", "#c0392b", "#d35400", "#f39c12", "#27ae60",
 
 DEFAULT_BIND = {"label": "", "hotkey": "", "text": "", "mode": "paste",
                 "enter": False, "enter_before": False, "enabled": True, "color": TILE,
-                "action": "text",  # "text" = post text, "page" = jump to another page
+                "action": "text",  # "text" = post text, "page" = jump to another page,
+                                   # "url" = open the website in "text"
                 "goto": "",        # id of the page to jump to (for action "page")
                 # action "reply" = a Discord slash command filled in for you:
                 "cmd": "/reply", "opt1": "", "opt2": "", "opt3": ""}
@@ -240,7 +241,7 @@ def new_page_id():
 def clean_bind(b):
     """A safe, complete button from whatever a file contained."""
     b = {**DEFAULT_BIND, **{k: v for k, v in b.items() if k in DEFAULT_BIND}}
-    if b.get("action") not in ("text", "page", "reply"):
+    if b.get("action") not in ("text", "page", "reply", "url"):
         b["action"] = "text"
     for k in ("label", "hotkey", "text", "goto", "cmd", "opt1", "opt2", "opt3"):
         if not isinstance(b.get(k), str):
@@ -651,6 +652,16 @@ def slash_plan(b, speed=1.0, clip=None):
         steps += [("tab",), ("text", flat(opt)), ("wait", round((2.0 if last else 1.5) * speed, 2))]
     steps += [("tab",), ("wait", round(0.5 * speed, 2)), ("enter",)]
     return steps
+
+
+def website_address(text):
+    """The web address a website button opens (always http/https)."""
+    u = " ".join(str(text).split())
+    if not u:
+        return ""
+    if not re.match(r"https?://", u, re.IGNORECASE):
+        u = "https://" + u.split("://", 1)[-1]
+    return u
 
 
 def describe_plan(steps):
@@ -1430,6 +1441,8 @@ class Panel:
             sub.append("→ " + (target["name"] if target else "missing page"))
         elif b.get("action") == "reply":
             sub.append((b.get("cmd") or "/reply").strip())
+        elif b.get("action") == "url":
+            sub.append("🌐 website")
         elif b.get("mode") == "copy":
             sub.append("📋 copy")
         if p["show_hotkeys"] and b["hotkey"]:
@@ -1611,6 +1624,8 @@ class BindEditor:
                         command=self._action_changed).pack(side="left")
         ttk.Radiobutton(act, text="Slash command", variable=self.action, value="reply",
                         command=self._action_changed).pack(side="left", padx=(10, 0))
+        ttk.Radiobutton(act, text="Open website", variable=self.action, value="url",
+                        command=self._action_changed).pack(side="left", padx=(10, 0))
         ttk.Radiobutton(act, text="Go to page:", variable=self.action, value="page",
                         command=self._action_changed).pack(side="left", padx=(10, 4))
         self._page_ids = [pg["id"] for pg in app.cfg["pages"]]
@@ -1662,7 +1677,8 @@ class BindEditor:
         else:
             self.slash_frame.grid_remove()
             self.text_frame.grid()
-            self.text_label.config(text="Text to post" if self.action.get() == "text" else "Text (not used)")
+            a = self.action.get()
+            self.text_label.config(text={"text": "Text to post", "url": "Website address"}.get(a, "Text (not used)"))
 
     def _action_changed(self):
         self._show_fields()
@@ -1721,6 +1737,10 @@ class BindEditor:
             sd = self._slash_data()
             if not any(sd[k] for k in ("opt1", "opt2", "opt3")):
                 err = "Fill in at least the 1st option (for /reply: the category)."
+        elif action == "url":
+            text = website_address(text)
+            if "." not in text:
+                err = "Type the website address, e.g. https://www.battlemetrics.com/rcon"
         elif not text.strip():
             err = "Type the text this button should post."
         if not err and hk:
@@ -2957,6 +2977,13 @@ class App:
         while True:
             b, from_click = self.post_queue.get()
             try:
+                if b.get("action") == "url":
+                    url = website_address(b.get("text", ""))
+                    if url:
+                        import webbrowser
+                        webbrowser.open(url)
+                        log(f"Opened website {url}")
+                    continue
                 if b.get("mode") == "copy" and b.get("action") == "text":
                     # just put the text on the clipboard, for {clipboard} buttons to use
                     text = "".join(st[1] for st in plan_text(b["text"]) if st[0] == "text").strip()
@@ -3529,6 +3556,10 @@ def selftest():
                                                              ("key", "f1")]
         assert plan_text("{key ctrl+v}") == [("key", "ctrl+v")]
         assert clean_bind({"mode": "copy"})["mode"] == "copy"
+        assert clean_bind({"action": "url"})["action"] == "url"
+        assert website_address("www.battlemetrics.com/rcon") == "https://www.battlemetrics.com/rcon"
+        assert website_address("http://x.com") == "http://x.com"
+        assert website_address("file://c:/evil.exe") == "https://c:/evil.exe"
         assert clean_bind({})["enter_before"] is False and clean_bind({"enter_before": 1})["enter_before"] is True
         keyboard.parse_hotkey("windows+d")
         assert isinstance(is_elevated(), bool)
