@@ -1,7 +1,6 @@
 {
   "keydeck_export": 1,
   "app_version": "1.14.0",
-  "description": "Teleport commands for the hub, raid and world servers.",
   "pages": [
     {
       "name": "Rust - Server & worlds",
@@ -145,7 +144,7 @@
         {
           "label": "WORLD 6",
           "hotkey": "",
-          "text": "{enter}/w6{enter}",
+          "text": "{enter}/w6",
           "mode": "type",
           "enter": false,
           "enabled": true,
@@ -159,5 +158,6 @@
         }
       ]
     }
-  ]
+  ],
+  "description": "Teleport commands for the hub, raid and world servers."
 }
