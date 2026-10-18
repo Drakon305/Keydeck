@@ -146,7 +146,7 @@
           "hotkey": "",
           "text": "{enter}/w6",
           "mode": "type",
-          "enter": false,
+          "enter": true,
           "enabled": true,
           "color": "#2980b9",
           "action": "text",
