@@ -3422,11 +3422,12 @@ def focustest():
     # (Alt combos can't be faked here: the keyboard library ignores injected
     # keys while Alt is held, so the test uses Ctrl+Shift+F-keys.)
     def press(*vks):  # key presses at the same level as a real keyboard
+        # real keyboards send scan codes, and hotkeys are matched on them
         for vk in vks:
-            user32.keybd_event(vk, 0, 0, 0)
+            user32.keybd_event(vk, user32.MapVirtualKeyW(vk, 0), 0, 0)
             time.sleep(0.03)
         for vk in reversed(vks):
-            user32.keybd_event(vk, 0, 2, 0)
+            user32.keybd_event(vk, user32.MapVirtualKeyW(vk, 0), 2, 0)
             time.sleep(0.03)
 
     def hotkey_round(np):
