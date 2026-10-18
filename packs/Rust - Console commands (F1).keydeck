@@ -1,7 +1,6 @@
 {
   "keydeck_export": 1,
   "app_version": "1.14.0",
-  "description": "Opens the F1 console, runs the command, closes it. Needs KeyDeck 1.14.0+.",
   "pages": [
     {
       "name": "Rust - Console commands (F1)",
@@ -55,9 +54,9 @@
         {
           "label": "BRIT EU",
           "hotkey": "",
-          "text": "{key f1}connect worlds.eu.britspve.com{enter}{key f1}",
+          "text": "{enter}/eu",
           "mode": "type",
-          "enter": false,
+          "enter": true,
           "enabled": true,
           "color": "#c0392b",
           "action": "text",
@@ -84,5 +83,6 @@
         }
       ]
     }
-  ]
+  ],
+  "description": "Opens the F1 console, runs the command, closes it. Needs KeyDeck 1.14.0+."
 }
