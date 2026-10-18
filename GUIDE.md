@@ -155,6 +155,7 @@ Click **📦 Library**. It shows every button people have shared as colored tile
 | Clicking KeyDeck doesn't take focus from your game | On by default: clicking a button leaves your game/Discord focused, so it never minimizes or pauses. Right-click menus still focus KeyDeck. |
 | Slash command speed | How long slash-command buttons wait for Discord (Fast → Super slow) |
 | Show hotkeys on buttons | Small hotkey text on each button |
+| Run as administrator | Needed when a game runs as administrator, or its hotkeys and typing are blocked. Windows asks Yes/No each time KeyDeck starts. |
 | Start KeyDeck with Windows | Opens automatically when you log in |
 | Tester: get new versions early (beta) | Get new versions before everyone else |
 | Fit window to buttons | Snap the window back to fit the grid |
@@ -175,7 +176,7 @@ KeyDeck checks for a new version a few seconds after it opens. If there is one, 
 | Problem | Fix |
 |---|---|
 | Text goes nowhere | Click into the text box first, then the KeyDeck button. |
-| Hotkey does nothing in a game | The game may run as admin: right-click KeyDeck → **Run as administrator**. |
+| Hotkeys / buttons do nothing in a game | The game runs as administrator. KeyDeck notices and offers to restart as administrator — click **Yes** (Windows asks to confirm). Or tick **Settings → Run as administrator**. |
 | App won't accept pasting | Set the button to **Type it out**. |
 | Game minimizes when you click KeyDeck | Run the game in **Borderless / Windowed** mode. True fullscreen games hide every other window. |
 | Can't find the window | Press **Ctrl+Alt+P**, or open KeyDeck again from the Desktop shortcut. |

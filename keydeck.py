@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.17.3"
+VERSION = "1.18.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -126,7 +126,8 @@ DEFAULT_CONFIG = {
         "font_size": 10,
         "show_hotkeys": True,
         "always_on_top": True,
-        "no_focus": True,  # clicking KeyDeck doesn't take focus away from your game
+        "no_focus": True,
+        "run_as_admin": False,  # needed when the game runs as administrator  # clicking KeyDeck doesn't take focus away from your game
         "toggle_hotkey": "ctrl+alt+p",
         "beta": False,  # True = get test versions before everyone else
         "submitter": "",  # name shown on Library submissions
@@ -195,6 +196,7 @@ def load_config():
     p["show_hotkeys"] = bool(p["show_hotkeys"])
     p["always_on_top"] = bool(p["always_on_top"])
     p["no_focus"] = bool(p.get("no_focus", True))
+    p["run_as_admin"] = bool(p.get("run_as_admin", False))
     p["beta"] = bool(p["beta"])
     try:
         p["slash_speed"] = max(0.5, min(3.0, float(p["slash_speed"])))
@@ -717,6 +719,87 @@ def set_startup(on):
                 winreg.DeleteValue(k, APP_NAME)
             except FileNotFoundError:
                 pass
+
+
+# ---- administrator --------------------------------------------------------------
+# Windows doesn't let a normal app see key presses in, or type into, a program
+# running as administrator (many games and anti-cheat launchers do). KeyDeck
+# then has to run as administrator too.
+
+def is_elevated():
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+_adv = ctypes.WinDLL("advapi32", use_last_error=True)
+_adv.OpenProcessToken.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_void_p)]
+_adv.GetTokenInformation.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_ulong,
+                                     ctypes.POINTER(ctypes.c_ulong)]
+
+
+def window_is_elevated(hwnd):
+    """True if the program that owns this window runs as administrator
+    (or is protected so we can't even look, which means the same thing)."""
+    pid = ctypes.c_ulong()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    if not pid.value:
+        return False
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.OpenProcess.restype = ctypes.c_void_p
+    k.CloseHandle.argtypes = [ctypes.c_void_p]
+    h = k.OpenProcess(0x1000, False, pid.value)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not h:
+        return ctypes.get_last_error() == 5  # access denied
+    try:
+        tok = ctypes.c_void_p()
+        if not _adv.OpenProcessToken(h, 0x0008, ctypes.byref(tok)):  # TOKEN_QUERY
+            return ctypes.get_last_error() == 5
+        try:
+            val, size = ctypes.c_ulong(), ctypes.c_ulong()
+            if not _adv.GetTokenInformation(tok, 20, ctypes.byref(val), 4, ctypes.byref(size)):
+                return False  # 20 = TokenElevation
+            return bool(val.value)
+        finally:
+            k.CloseHandle(tok)
+    finally:
+        k.CloseHandle(h)
+
+
+def window_exe_name(hwnd):
+    pid = ctypes.c_ulong()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.OpenProcess.restype = ctypes.c_void_p
+    k.CloseHandle.argtypes = [ctypes.c_void_p]
+    k.QueryFullProcessImageNameW.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_wchar_p,
+                                             ctypes.POINTER(ctypes.c_ulong)]
+    h = k.OpenProcess(0x1000, False, pid.value)
+    if not h:
+        return ""
+    try:
+        buf, n = ctypes.create_unicode_buffer(600), ctypes.c_ulong(600)
+        if k.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n)):
+            return os.path.basename(buf.value)
+        return ""
+    finally:
+        k.CloseHandle(h)
+
+
+def relaunch_as_admin():
+    """Start KeyDeck again as administrator (Windows asks Yes/No first).
+    Returns True if it started; the caller should then quit."""
+    if getattr(sys, "frozen", False):
+        exe, params = sys.executable, "--after-restart"
+    else:
+        exe, params = sys.executable, f'"{os.path.abspath(__file__)}" --after-restart'
+    sh = ctypes.windll.shell32
+    sh.ShellExecuteW.restype = ctypes.c_void_p
+    rc = sh.ShellExecuteW(None, "runas", exe, params, None, 1)
+    ok = (rc or 0) > 32
+    log(f"Relaunch as administrator: {'started' if ok else 'cancelled/failed'} ({rc})")
+    return ok
 
 
 # ---- single instance ---------------------------------------------------------
@@ -1731,6 +1814,10 @@ class SettingsWindow:
         ttk.Checkbutton(f, text="Show hotkeys on buttons", variable=self.show_hotkeys
                         ).grid(row=r, column=0, columnspan=2, sticky="w")
         r += 1
+        self.run_admin = tk.BooleanVar(value=p["run_as_admin"])
+        ttk.Checkbutton(f, text="Run as administrator (needed if hotkeys don't work in a game)",
+                        variable=self.run_admin).grid(row=r, column=0, columnspan=2, sticky="w")
+        r += 1
         self.startup = tk.BooleanVar(value=get_startup())
         ttk.Checkbutton(f, text="Start KeyDeck with Windows", variable=self.startup,
                         command=self.toggle_startup).grid(row=r, column=0, columnspan=2, sticky="w")
@@ -1861,6 +1948,7 @@ class SettingsWindow:
             slash_speed=dict(SLASH_SPEEDS).get(self.slash_speed.get(), 1.0),
             always_on_top=self.on_top.get(),
             no_focus=self.no_focus.get(),
+            run_as_admin=self.run_admin.get(),
             toggle_hotkey=hk,
         )
         p = self.app.cfg["panel"]
@@ -1869,6 +1957,10 @@ class SettingsWindow:
         if layout_changed:  # new grid shape: refit the window to it
             self.app.panel.reset_size()
         self.close()
+        if p["run_as_admin"] and not self.app._elevated:
+            if messagebox.askyesno(APP_NAME, "Restart KeyDeck as administrator now?", parent=self.app.root):
+                if relaunch_as_admin():
+                    self.app.quit()
 
     def close(self):
         if self.app.settings is self:
@@ -2540,6 +2632,9 @@ class App:
         self.editor = None
         self.library = None
         self.last_target = None  # last outside window you were typing in
+        self._elevated = is_elevated()
+        self._admin_asked = False
+        log(f"Running as administrator: {self._elevated}")
         self.tray = None
 
         self.panel = Panel(self)
@@ -2664,6 +2759,8 @@ class App:
                 force_foreground(self.root)
             fg = user32.GetForegroundWindow()
             if fg and not is_own_window(fg):
+                if fg != self.last_target:
+                    self._check_admin_needed(fg)
                 self.last_target = fg
             self._poll_n = getattr(self, "_poll_n", 0) + 1
             if self._poll_n % 33 == 1:
@@ -2737,6 +2834,41 @@ class App:
         if check_toggle and norm_hotkey(self.cfg["panel"].get("toggle_hotkey")) == n:
             return "the show/hide hotkey"
         return None
+
+    def _check_admin_needed(self, fg):
+        """If you switch to a program running as administrator (e.g. a game),
+        Windows hides your key presses from KeyDeck there. Offer to fix it."""
+        if self._elevated or self._admin_asked:
+            return
+        try:
+            if not window_is_elevated(fg):
+                return
+            name = window_exe_name(fg) or "This program"
+        except Exception:
+            return
+        self._admin_asked = True  # ask once per run
+        log(f"{name} runs as administrator; KeyDeck doesn't")
+        self.root.after(50, lambda: self._offer_admin(name))
+
+    def _offer_admin(self, name):
+        msg = (f"{name} is running as administrator.\n\n"
+               "Windows blocks hotkeys and typing from normal apps into it, so KeyDeck "
+               "can't work there until it runs as administrator too.\n\n"
+               "Restart KeyDeck as administrator now?\n"
+               "(It will always start that way. You can change this in Settings.)")
+        top = tk.Toplevel(self.root)
+        top.withdraw()
+        top.attributes("-topmost", True)
+        yes = messagebox.askyesno(APP_NAME, msg, parent=top)
+        top.destroy()
+        if yes:
+            self.cfg["panel"]["run_as_admin"] = True
+            save_config(self.cfg)
+            if relaunch_as_admin():
+                self.quit()
+            else:
+                self.cfg["panel"]["run_as_admin"] = False
+                save_config(self.cfg)
 
     def _raise_on_click_worker(self):
         """With "doesn't take focus" on, clicking KeyDeck can't bring it to the
@@ -3275,6 +3407,19 @@ def main():
         return
     remove_old_keydrop()
 
+    if "--after-restart" in sys.argv:  # the old copy is closing; give it a moment
+        for _ in range(40):
+            if not already_running():
+                break
+            time.sleep(0.25)
+    elif not is_elevated():
+        try:
+            want_admin = load_config()["panel"]["run_as_admin"]
+        except Exception:
+            want_admin = False
+        if want_admin and relaunch_as_admin():
+            return
+
     if already_running():
         log("Another KeyDeck is running; asking it to show itself")
         signal_show()
@@ -3350,6 +3495,8 @@ def selftest():
         assert clean_bind({"mode": "copy"})["mode"] == "copy"
         assert clean_bind({})["enter_before"] is False and clean_bind({"enter_before": 1})["enter_before"] is True
         keyboard.parse_hotkey("windows+d")
+        assert isinstance(is_elevated(), bool)
+        assert isinstance(window_is_elevated(user32.GetForegroundWindow() or 0), bool)
     except Exception:
         problems.append("backup/share: " + traceback.format_exc())
     try:
