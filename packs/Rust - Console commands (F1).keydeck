@@ -39,9 +39,9 @@
         {
           "label": "BRIT US",
           "hotkey": "",
-          "text": "{key f1}connect worlds.us.britspve.com{enter}{key f1}",
+          "text": "{enter}/us",
           "mode": "type",
-          "enter": false,
+          "enter": true,
           "enabled": true,
           "color": "#c0392b",
           "action": "text",
