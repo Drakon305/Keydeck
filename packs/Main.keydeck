@@ -1,6 +1,6 @@
 {
   "keydeck_export": 1,
-  "app_version": "1.13.0",
+  "app_version": "1.14.0",
   "pages": [
     {
       "name": "Main",
@@ -115,7 +115,7 @@
           "label": "TP {STEAM ID}",
           "hotkey": "",
           "text": "/tp {clipboard}",
-          "mode": "paste",
+          "mode": "type",
           "enter": true,
           "enabled": true,
           "color": "#16a085",
