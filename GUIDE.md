@@ -112,6 +112,7 @@ Example:
 - **+ Page** (end of the tab row) – make a new page.
 - **Double-click** the current tab – rename it.
 - **Right-click** a tab – Rename, Export this page, Import buttons, Move left/right, Delete page.
+- **Show automatically in…** (right-click a tab) – type a program, e.g. `RustClient.exe`, and that page shows up by itself whenever that program is in front. Pages with this set get a ⚡. Turn it all off in Settings.
 - **Go-to-page buttons:** in the button editor choose **Go to page:** and pick a page. Clicking it (or its hotkey) jumps there. Tip: put a "Back to Main" button on each page.
 - **Hotkeys work on every page**, not just the one showing.
 
@@ -142,6 +143,7 @@ Click **📦 Library**. It shows every button people have shared as colored tile
   - **Yes** = add its pages next to yours
   - **No** = replace all your buttons with it (asks again first)
 - Send a `.keydeck` file to a friend and they can import it the same way.
+- **Stream Deck:** Settings → **Import Stream Deck profile…** loads an Elgato `.streamDeckProfile` (in the Stream Deck app: profile menu → Export). Folders become pages with Back buttons; text, hotkeys, multi-actions, websites and Next/Previous page all come across. Plugin keys (like Discord) are listed as left out.
 
 ---
 

@@ -21,11 +21,12 @@ import sys
 import threading
 import time
 import traceback
+import uuid
 
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.19.0"
+VERSION = "1.20.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -133,7 +134,8 @@ DEFAULT_CONFIG = {
         "show_hotkeys": True,
         "always_on_top": True,
         "no_focus": True,
-        "run_as_admin": False,  # needed when the game runs as administrator  # clicking KeyDeck doesn't take focus away from your game
+        "run_as_admin": False,
+        "auto_pages": True,  # show a page by itself when its app is in front  # needed when the game runs as administrator  # clicking KeyDeck doesn't take focus away from your game
         "toggle_hotkey": "ctrl+alt+p",
         "beta": False,  # True = get test versions before everyone else
         "submitter": "",  # name shown on Library submissions
@@ -159,6 +161,7 @@ def load_config():
                 pages.append({"name": str(pg.get("name") or "Page"), "id": pg.get("id"),
                               "pack": pg.get("pack") if isinstance(pg.get("pack"), str) else None,
                               "pack_sha": pg.get("pack_sha") if isinstance(pg.get("pack_sha"), str) else None,
+                              "apps": [str(a).lower() for a in pg.get("apps") or [] if str(a).strip()][:10],
                               "binds": [{**DEFAULT_BIND, **b} for b in binds if isinstance(b, dict)]})
             if pages:
                 cfg["pages"] = pages
@@ -203,6 +206,7 @@ def load_config():
     p["always_on_top"] = bool(p["always_on_top"])
     p["no_focus"] = bool(p.get("no_focus", True))
     p["run_as_admin"] = bool(p.get("run_as_admin", False))
+    p["auto_pages"] = bool(p.get("auto_pages", True))
     p["beta"] = bool(p["beta"])
     try:
         p["slash_speed"] = max(0.5, min(3.0, float(p["slash_speed"])))
@@ -264,6 +268,245 @@ def save_export_file(path, pages):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     os.replace(tmp, path)
+
+
+# ---- Stream Deck import --------------------------------------------------------
+
+_SD_VK = {8: "backspace", 9: "tab", 13: "enter", 27: "esc", 32: "space", 33: "page up", 34: "page down",
+          35: "end", 36: "home", 37: "left", 38: "up", 39: "right", 40: "down", 44: "print screen",
+          45: "insert", 46: "delete", 91: "windows", 92: "windows",
+          186: ";", 187: "=", 188: ",", 189: "-", 190: ".", 191: "/", 192: "`",
+          219: "[", 220: "\\", 221: "]", 222: "'"}
+_SD_VK.update({n: f"f{n - 111}" for n in range(112, 136)})
+_SD_VK.update({n: f"num {n - 96}" for n in range(96, 106)})
+
+
+def _sd_folder_name(u):
+    """Stream Deck stores page folders under their UUID written in its own base32."""
+    import base64
+    try:
+        b = uuid.UUID(str(u)).bytes
+    except ValueError:
+        return None
+    s = base64.b32hexencode(b).decode().rstrip("=")
+    return s.translate(str.maketrans("UV", "VW")) + "Z"
+
+
+def _sd_combo(h):
+    vk = h.get("VKeyCode", -1)
+    if vk in (-1, None):
+        return None
+    name = _SD_VK.get(vk) or (chr(vk).lower() if 48 <= vk <= 90 else None)
+    if not name:
+        return None
+    mods = [m for m, k in (("ctrl", "KeyCtrl"), ("shift", "KeyShift"), ("alt", "KeyOption"),
+                           ("windows", "KeyCmd")) if h.get(k)]
+    return "+".join(mods + [name])
+
+
+def _sd_title(a):
+    states = a.get("States") or [{}]
+    st = a.get("State", 0) or 0
+    t = (states[st] if st < len(states) else states[0]).get("Title") or ""
+    return " ".join(t.split())
+
+
+def _sd_auto_label(text):
+    """A short name for a key that had no title on the Stream Deck."""
+    t = re.sub(r"\{[^{}]*\}", " ", text)
+    m = re.search(r"https?://\S+", t)
+    if m:  # e.g. a GIF link: use the words in its address
+        slug = m.group(0).rstrip("/").rsplit("/", 1)[-1]
+        words = [w for w in re.split(r"[-_]+", slug) if w and not w.isdigit() and w.lower() != "gif"]
+        if words:
+            return " ".join(words[:4])[:24]
+    return " ".join(t.split())[:24] or "Button"
+
+
+def read_streamdeck_profile(path):
+    """Turn an Elgato Stream Deck profile (.streamDeckProfile) into KeyDeck pages.
+    Returns (pages, skipped) where skipped lists buttons KeyDeck can't do."""
+    import zipfile
+    import posixpath
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+
+        def load(n):
+            return json.loads(z.read(n).decode("utf-8-sig"))
+        tops = [n for n in names if re.fullmatch(r"[^/]+\.sdProfile/manifest\.json", n)]
+        if not tops:
+            raise ValueError("This doesn't look like a Stream Deck profile.")
+        root = tops[0].rsplit("/", 1)[0]
+        top = load(tops[0])
+        profile_name = " ".join(str(top.get("Name") or "Stream Deck").split())[:24]
+        sub = {}  # folder name -> manifest
+        for n in names:
+            m = re.fullmatch(re.escape(root) + r"/Profiles/([^/]+)/manifest\.json", n)
+            if m:
+                try:
+                    sub[m.group(1).upper()] = load(n)
+                except Exception:
+                    pass
+    if not sub and isinstance(top.get("Actions"), dict):  # old single-page format
+        sub = {"MAIN": top}
+
+    def actions_of(man):
+        acts = {}
+        if isinstance(man.get("Actions"), dict):
+            acts.update(man["Actions"])
+        for c in man.get("Controllers") or []:
+            if isinstance(c, dict) and isinstance(c.get("Actions"), dict):
+                acts.update(c["Actions"])
+        return acts
+
+    def folder_of(u):
+        f = _sd_folder_name(u)
+        return f if f in sub else None
+
+    # top-level pages in their order, then folders as we find them
+    order, parent, titles = [], {}, {}
+    for u in ((top.get("Pages") or {}).get("Pages") or []):
+        f = folder_of(u)
+        if f and f not in order:
+            order.append(f)
+    if not order:
+        order = sorted(sub)
+    top_pages = list(order)
+    i = 0
+    while i < len(order):
+        for a in actions_of(sub[order[i]]).values():
+            u = (a.get("Settings") or {}).get("ProfileUUID")
+            if "openchild" in a.get("UUID", "") and u:
+                f = folder_of(u)
+                if f and f not in order:
+                    order.append(f)
+                    parent[f] = order[i]
+                    titles[f] = _sd_title(a)
+        i += 1
+
+    ids = {f: new_page_id() for f in order}
+    skipped = []
+    out = {}
+    for f in order:
+        binds = []
+        acts = actions_of(sub[f])
+
+        def pos_key(p):
+            try:
+                c, r = (int(x) for x in p.split(","))
+            except ValueError:
+                c, r = 99, 99
+            return (r, c)
+        for pos in sorted(acts, key=pos_key):
+            a = acts[pos]
+            b = _sd_convert(a, f, parent, ids, top_pages, folder_of, skipped)
+            if b:
+                binds.append(clean_bind(b))
+        out[f] = binds
+
+    # drop pages with nothing but navigation, and links to them
+    def useful(f):
+        return any(b["action"] != "page" for b in out[f])
+    keep = [f for f in order if useful(f)]
+    keep_ids = {ids[f] for f in keep}
+    pages = []
+    for k, f in enumerate(keep):
+        binds = [b for b in out[f] if b["action"] != "page" or b["goto"] in keep_ids]
+        if f in titles and titles[f]:
+            name = titles[f]
+        elif f in top_pages and top_pages.index(f) > 0:
+            name = f"{profile_name} {top_pages.index(f) + 1}"
+        else:
+            name = profile_name
+        pages.append({"name": name[:30], "id": ids[f], "binds": binds})
+    if not pages:
+        raise ValueError("No buttons KeyDeck can use were found in this profile.")
+    return pages, skipped
+
+
+def _sd_convert(a, f, parent, ids, top_pages, folder_of, skipped):
+    """One Stream Deck key -> a KeyDeck button dict (or None)."""
+    uid = a.get("UUID", "")
+    title = _sd_title(a)
+    s = a.get("Settings") or {}
+    nav = None
+    if "backtoparent" in uid:
+        nav = parent.get(f)
+        title = title if title and title != "Parent Folder" else "BACK"
+    elif "openchild" in uid:
+        nav = folder_of(s.get("ProfileUUID"))
+    elif uid.endswith("page.next") or uid.endswith("page.previous"):
+        if f in top_pages:
+            j = top_pages.index(f) + (1 if uid.endswith("next") else -1)
+            nav = top_pages[j] if 0 <= j < len(top_pages) else None
+    if nav is not None or "backtoparent" in uid or "openchild" in uid or ".page." in uid:
+        if not nav:
+            return None
+        return {"label": title or "Page", "action": "page", "goto": ids[nav], "color": "#8e44ad"}
+
+    if "multiactions" in uid:
+        groups = a.get("Actions") or []
+        steps = (groups[0].get("Actions") if groups and isinstance(groups[0], dict) else None) or []
+    else:
+        steps = [a]
+
+    if len(steps) == 1 and steps[0].get("UUID", "").endswith("system.website"):
+        url = (steps[0].get("Settings") or {}).get("path") or ""
+        if url:
+            return {"label": title or "Website", "action": "url", "text": url, "color": "#2980b9"}
+
+    parts, typed, has_text = [], False, False
+    for st in steps:
+        su, ss = st.get("UUID", ""), st.get("Settings") or {}
+        if su.endswith("system.text"):
+            t = str(ss.get("pastedText") or "").replace(" \t", " ").replace("\t", " ")
+            parts.append(("text", t))
+            has_text = has_text or bool(t)
+            typed = typed or bool(ss.get("isTypingMode"))
+            if ss.get("isSendingEnter"):
+                parts.append(("raw", "{enter}"))
+        elif su.endswith("system.hotkey"):
+            for h in ss.get("Hotkeys") or []:
+                k = _sd_combo(h) if isinstance(h, dict) else None
+                if k:
+                    parts.append(("key", k))
+        elif "delay" in su.lower():
+            ms = ss.get("delay") or ss.get("Delay") or 0
+            try:
+                parts.append(("raw", "{wait %g}" % (float(ms) / 1000.0)))
+            except (TypeError, ValueError):
+                pass
+        else:
+            skipped.append(f"{title or '(no name)'} ({su.rsplit('.', 2)[-2] if '.' in su else su})")
+            return None
+
+    # "paste some text, then Ctrl+Z" was a Stream Deck trick for setting the clipboard
+    if (len(parts) == 2 and parts[0][0] == "text" and parts[1] == ("key", "ctrl+z")):
+        return {"label": title or parts[0][1][:20], "mode": "copy", "text": parts[0][1]}
+
+    out = []
+    for kind, v in parts:
+        if kind == "key":
+            if v in ("enter", "tab"):
+                out.append("{%s}" % v)
+            elif v == "ctrl+v" and has_text:
+                out.append("{clipboard}")  # pasting the copied name/ID into a command
+            else:
+                out.append("{key %s}" % v)
+        elif kind == "text":
+            out.append(v)
+        else:
+            out.append(v)
+    text = "".join(out)
+    if not text.strip():
+        return None
+    color = TILE
+    if "{key f1}" in text:
+        color = "#c0392b"
+    elif not has_text:
+        color = "#7f8c8d"
+    return {"label": title or _sd_auto_label(text), "text": text,
+            "mode": "type" if typed else "paste", "color": color}
 
 
 def read_export_file(path):
@@ -1310,7 +1553,8 @@ class Panel:
         cur = cfg["current_page"]
         for k, pg in enumerate(cfg["pages"]):
             on = k == cur
-            t = tk.Label(self.tabs, text=pg["name"], padx=12, pady=4, cursor="hand2",
+            t = tk.Label(self.tabs, text=pg["name"] + ("  ⚡" if pg.get("apps") else ""),
+                         padx=12, pady=4, cursor="hand2",
                          bg=BG if on else TABS_BG, fg=ACCENT if on else DIM,
                          font=("Segoe UI", 9, "bold" if on else "normal"))
             t.pack(side="left", padx=(0, 1))
@@ -1339,6 +1583,9 @@ class Panel:
         n = len(self.app.cfg["pages"])
         m = tk.Menu(self.win, tearoff=0)
         m.add_command(label="Rename page", command=lambda: self.app.rename_page(k))
+        apps = self.app.cfg["pages"][k].get("apps") or []
+        m.add_command(label="Show automatically in…" + (f" ({', '.join(apps)})" if apps else ""),
+                      command=lambda: self.app.set_page_apps(k))
         m.add_command(label="Export this page…", command=lambda: self.app.export_pages([k]))
         m.add_command(label="Submit to Library…", command=lambda: self.app.submit_page(k))
         m.add_command(label="Import buttons…", command=lambda: self.app.import_pages())
@@ -1861,6 +2108,10 @@ class SettingsWindow:
         ttk.Checkbutton(f, text="Show hotkeys on buttons", variable=self.show_hotkeys
                         ).grid(row=r, column=0, columnspan=2, sticky="w")
         r += 1
+        self.auto_pages = tk.BooleanVar(value=p["auto_pages"])
+        ttk.Checkbutton(f, text="Switch pages by themselves (right-click a tab → Show automatically in…)",
+                        variable=self.auto_pages).grid(row=r, column=0, columnspan=2, sticky="w")
+        r += 1
         self.run_admin = tk.BooleanVar(value=p["run_as_admin"])
         ttk.Checkbutton(f, text="Run as administrator (needed if hotkeys don't work in a game)",
                         variable=self.run_admin).grid(row=r, column=0, columnspan=2, sticky="w")
@@ -1901,6 +2152,8 @@ class SettingsWindow:
         ttk.Button(bk, text="Export buttons…", command=lambda: app.export_pages(parent=w)
                    ).pack(side="left", padx=(8, 0))
         ttk.Button(bk, text="Import buttons…", command=lambda: app.import_pages(parent=w)
+                   ).pack(side="left", padx=(6, 0))
+        ttk.Button(bk, text="Import Stream Deck profile…", command=lambda: app.import_streamdeck(parent=w)
                    ).pack(side="left", padx=(6, 0))
         self._orig_layout = (p["columns"], p["tile"])
         ttk.Button(bb, text="Close", command=self.close).pack(side="right")
@@ -1996,6 +2249,7 @@ class SettingsWindow:
             always_on_top=self.on_top.get(),
             no_focus=self.no_focus.get(),
             run_as_admin=self.run_admin.get(),
+            auto_pages=self.auto_pages.get(),
             toggle_hotkey=hk,
         )
         p = self.app.cfg["panel"]
@@ -2679,6 +2933,7 @@ class App:
         self.editor = None
         self.library = None
         self.last_target = None  # last outside window you were typing in
+        self._recent_apps = []  # programs you were in lately (for auto-pages)
         self._elevated = is_elevated()
         self._admin_asked = False
         log(f"Running as administrator: {self._elevated}")
@@ -2808,6 +3063,7 @@ class App:
             if fg and not is_own_window(fg):
                 if fg != self.last_target:
                     self._check_admin_needed(fg)
+                    self._app_changed(fg)
                 self.last_target = fg
             self._poll_n = getattr(self, "_poll_n", 0) + 1
             if self._poll_n % 33 == 1:
@@ -2881,6 +3137,56 @@ class App:
         if check_toggle and norm_hotkey(self.cfg["panel"].get("toggle_hotkey")) == n:
             return "the show/hide hotkey"
         return None
+
+    def _app_changed(self, fg):
+        """You switched to another program: remember it, and show its page if one is set."""
+        try:
+            exe = window_exe_name(fg).lower()
+        except Exception:
+            return
+        if not exe or exe in ("explorer.exe", "searchhost.exe", "shellexperiencehost.exe"):
+            return
+        if exe in self._recent_apps:
+            self._recent_apps.remove(exe)
+        self._recent_apps.insert(0, exe)
+        del self._recent_apps[8:]
+        if not self.cfg["panel"]["auto_pages"] or self.editor or self.settings or self.library:
+            return
+        for k, pg in enumerate(self.cfg["pages"]):
+            if exe in (pg.get("apps") or []):
+                if k != self.cfg["current_page"]:
+                    log(f"{exe} in front: showing page {pg['name']!r}")
+                    self.switch_page(k)
+                return
+
+    def set_page_apps(self, k):
+        """Pick which program(s) make this page show up by itself."""
+        pg = self.cfg["pages"][k]
+        recent = [a for a in self._recent_apps if a != "keydeck.exe"]
+        hint = ("Recently used: " + ", ".join(recent[:6])) if recent else \
+            "Tip: open the game first, then come back here and it will be listed."
+        cur = ", ".join(pg.get("apps") or [])
+        ans = simpledialog.askstring(
+            APP_NAME,
+            f'Show "{pg["name"]}" automatically when this program is in front.\n'
+            f"Type its name, e.g. RustClient.exe or Discord.exe (several: separate with commas).\n"
+            f"Leave empty to turn it off.\n\n{hint}",
+            initialvalue=cur or (recent[0] if recent else ""), parent=self.root)
+        if ans is None:
+            return
+        apps = []
+        for a in ans.replace(";", ",").split(","):
+            a = a.strip().strip('"').lower()
+            if a and not a.endswith(".exe"):
+                a += ".exe"
+            if a and a not in apps:
+                apps.append(a)
+        for other in self.cfg["pages"]:  # one page per program
+            if other is not pg:
+                other["apps"] = [x for x in other.get("apps") or [] if x not in apps]
+        pg["apps"] = apps[:10]
+        save_config(self.cfg)
+        self.panel.rebuild()
 
     def _check_admin_needed(self, fg):
         """If you switch to a program running as administrator (e.g. a game),
@@ -3191,26 +3497,43 @@ class App:
             "Keep it as a backup, or send it to a friend - they can load it with "
             "Settings > Import buttons.", parent=parent)
 
-    def import_pages(self, parent=None):
+    def import_streamdeck(self, parent=None):
+        self.import_pages(parent, title="Open a Stream Deck profile", filetypes=[
+            ("Stream Deck profile", "*.streamDeckProfile"), ("All files", "*.*")])
+
+    def import_pages(self, parent=None, title="Open KeyDeck buttons", filetypes=None):
         """Load pages from a .keydeck file (or a KeyDeck config.json)."""
         parent = parent or self.root
         path = filedialog.askopenfilename(
-            parent=parent, title="Open KeyDeck buttons",
+            parent=parent, title=title,
             initialdir=os.path.join(os.path.expanduser("~"), "Documents"),
-            filetypes=[("KeyDeck buttons", "*.keydeck *.json"), ("All files", "*.*")])
+            filetypes=filetypes or [("KeyDeck or Stream Deck buttons", "*.keydeck *.json *.streamDeckProfile"),
+                                    ("All files", "*.*")])
         if not path:
             return
+        skipped = []
         try:
-            new_pages = read_export_file(path)
+            import zipfile
+            if path.lower().endswith(".streamdeckprofile") or zipfile.is_zipfile(path):
+                new_pages, skipped = read_streamdeck_profile(path)
+            else:
+                new_pages = read_export_file(path)
         except Exception as e:
-            messagebox.showerror(APP_NAME, f"That file couldn't be read as KeyDeck buttons.\n\n{e}",
+            log("Import failed:\n" + traceback.format_exc())
+            messagebox.showerror(APP_NAME, f"That file couldn't be read as buttons.\n\n{e}",
                                  parent=parent)
             return
         n = sum(len(pg["binds"]) for pg in new_pages)
+        note = ""
+        if skipped:
+            note = (f"\n\nLeft out {len(skipped)} Stream Deck key(s) KeyDeck can't do "
+                    f"(plugins like Discord):\n  " + "\n  ".join(skipped[:8])
+                    + ("\n  …" if len(skipped) > 8 else ""))
         choice = messagebox.askyesnocancel(
             APP_NAME,
             f"This file has {n} button(s) on {len(new_pages)} page(s):\n"
             + "\n".join(f"  • {pg['name']} ({len(pg['binds'])})" for pg in new_pages[:12])
+            + note
             + "\n\nYes = ADD these pages next to your current ones\n"
               "No = REPLACE all your current buttons with these\n"
               "Cancel = do nothing", parent=parent)
@@ -3557,6 +3880,54 @@ def selftest():
         assert plan_text("{key ctrl+v}") == [("key", "ctrl+v")]
         assert clean_bind({"mode": "copy"})["mode"] == "copy"
         assert clean_bind({"action": "url"})["action"] == "url"
+        # a tiny made-up Stream Deck profile: a page with a folder, keys and a multi-action
+        import tempfile
+        import zipfile
+        main_u, fold_u = str(uuid.uuid4()), str(uuid.uuid4())
+        key = lambda uid, settings, title="": {"UUID": uid, "Settings": settings,
+                                               "States": [{"Title": title}], "State": 0}
+        hot = lambda vk, **m: {"VKeyCode": vk, **m}
+        main_acts = {
+            "0,0": key("com.elgato.streamdeck.profile.openchild", {"ProfileUUID": fold_u}, "TOOLS"),
+            "1,0": {"UUID": "com.elgato.streamdeck.multiactions.routine", "States": [{"Title": "VANISH"}],
+                    "Actions": [{"Actions": [
+                        key("com.elgato.streamdeck.system.hotkey", {"Hotkeys": [hot(112)]}),
+                        key("com.elgato.streamdeck.system.text", {"pastedText": "vanish", "isTypingMode": True,
+                                                                 "isSendingEnter": True}),
+                        key("com.elgato.streamdeck.system.hotkey", {"Hotkeys": [hot(112)]})]}]},
+            "2,0": key("com.elgato.streamdeck.system.website", {"path": "https://example.com"}, "Site"),
+            "3,0": key("com.elgato.discord.channel.voice", {}, "JOIN"),
+        }
+        fold_acts = {
+            "0,0": key("com.elgato.streamdeck.profile.backtoparent", {}, "Parent Folder"),
+            "1,0": {"UUID": "com.elgato.streamdeck.multiactions.routine", "States": [{"Title": "TP"}],
+                    "Actions": [{"Actions": [
+                        key("com.elgato.streamdeck.system.hotkey", {"Hotkeys": [hot(13)]}),
+                        key("com.elgato.streamdeck.system.text", {"pastedText": "/tp "}),
+                        key("com.elgato.streamdeck.system.hotkey", {"Hotkeys": [hot(86, KeyCtrl=True)]}),
+                        key("com.elgato.streamdeck.system.hotkey", {"Hotkeys": [hot(13)]})]}]},
+            "2,0": {"UUID": "com.elgato.streamdeck.multiactions.routine", "States": [{"Title": "MY ID"}],
+                    "Actions": [{"Actions": [
+                        key("com.elgato.streamdeck.system.text", {"pastedText": "7656"}),
+                        key("com.elgato.streamdeck.system.hotkey", {"Hotkeys": [hot(90, KeyCtrl=True)]})]}]},
+        }
+        sdp = os.path.join(tempfile.gettempdir(), "keydeck_selftest.streamDeckProfile")
+        with zipfile.ZipFile(sdp, "w") as z:
+            z.writestr("X.sdProfile/manifest.json", json.dumps({"Name": "Mod", "Pages": {"Pages": [main_u]}}))
+            z.writestr(f"X.sdProfile/Profiles/{_sd_folder_name(main_u)}/manifest.json",
+                       json.dumps({"Controllers": [{"Actions": main_acts}]}))
+            z.writestr(f"X.sdProfile/Profiles/{_sd_folder_name(fold_u)}/manifest.json",
+                       json.dumps({"Controllers": [{"Actions": fold_acts}]}))
+        sd_pages, sd_skipped = read_streamdeck_profile(sdp)
+        os.remove(sdp)
+        assert [pg["name"] for pg in sd_pages] == ["Mod", "TOOLS"], sd_pages
+        m0, f0 = sd_pages[0]["binds"], sd_pages[1]["binds"]
+        assert m0[0]["action"] == "page" and m0[0]["goto"] == sd_pages[1]["id"]
+        assert m0[1]["text"] == "{key f1}vanish{enter}{key f1}" and m0[1]["mode"] == "type"
+        assert m0[2]["action"] == "url" and len(m0) == 3 and sd_skipped == ["JOIN (channel)"]
+        assert f0[0]["label"] == "BACK" and f0[0]["goto"] == sd_pages[0]["id"]
+        assert f0[1]["text"] == "{enter}/tp {clipboard}{enter}", f0[1]
+        assert f0[2]["mode"] == "copy" and f0[2]["text"] == "7656"
         assert website_address("www.battlemetrics.com/rcon") == "https://www.battlemetrics.com/rcon"
         assert website_address("http://x.com") == "http://x.com"
         assert website_address("file://c:/evil.exe") == "https://c:/evil.exe"
@@ -3861,6 +4232,18 @@ def focustest():
                 finish(2, f"SKIP: couldn't put Notepad in front (old={old} new={new})")
             hk = hotkey_round(np)
             rc = right_click_round(np)
+
+            def auto_setup():
+                pg2["apps"] = ["notepad.exe"]
+                app._set_page(0)
+                app.apply()
+                app.last_target = None  # as if you just switched to Notepad
+            on_tk(auto_setup)
+            bring(np)
+            time.sleep(1.0)
+            rc["auto_page_switched"] = on_tk(lambda: app.cfg["current_page"]) == 1
+            rc["auto_page_kept_focus"] = user32.GetForegroundWindow() == np
+            on_tk(lambda: pg2.update(apps=[]))
             fr = front_round(np)
             msg = f"old way: {old} | no-focus way: {new} | hotkeys: {hk} | right-click: {rc} | to-front: {fr}"
             if errors:

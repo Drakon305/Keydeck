@@ -33,6 +33,8 @@ KeyDeck checks for updates when it opens and offers to install new versions itse
   - `{tab}` — presses Tab (moves between Discord slash-command options)
   - `{key f1}` — presses any key or combo, e.g. `{key f1}vanish{enter}{key f1}` or `{key ctrl+v}`
   - Round brackets work too: `(enter)`, `(tab)`, `(wait 2)`
+- **Stream Deck import**: Settings → Import Stream Deck profile… turns an Elgato profile into KeyDeck pages
+- **Auto pages**: right-click a tab → Show automatically in… (e.g. RustClient.exe)
 - **Backup & share**: Settings → Export buttons… saves a `.keydeck` file; Import buttons… loads one (add alongside yours, or replace). Right-click a tab to export just that page.
 - Settings → **Uninstall** removes it cleanly
 
