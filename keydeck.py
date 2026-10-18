@@ -997,23 +997,24 @@ user32.WindowFromPoint.restype = ctypes.c_void_p
 user32.GetAsyncKeyState.restype = ctypes.c_short
 
 
-def raise_quietly(win, stay_on_top):
+def raise_quietly(hwnd, stay_on_top):
     """Bring the window in front of other windows without taking focus.
     (Windows won't let a background app move itself up with HWND_TOP, but
     flipping always-on-top on and back off does the same thing.)"""
-    set_topmost_quietly(win, True)
+    flags = 0x0001 | 0x0002 | 0x0010  # NOSIZE | NOMOVE | NOACTIVATE
+    user32.SetWindowPos(hwnd, ctypes.c_void_p(-1), 0, 0, 0, 0, flags)
     if not stay_on_top:
-        set_topmost_quietly(win, False)
+        user32.SetWindowPos(hwnd, ctypes.c_void_p(-2), 0, 0, 0, 0, flags)
 
 
-def mouse_down_on(win):
+def mouse_down_on(hwnd):
     """True while the left mouse button is held over this window (title bar included)."""
     if not (user32.GetAsyncKeyState(0x01) & 0x8000):
         return False
     pt = _POINT()
     user32.GetCursorPos(ctypes.byref(pt))
     w = user32.WindowFromPoint(pt)
-    return bool(w) and user32.GetAncestor(w, 2) == get_hwnd(win)
+    return bool(w) and user32.GetAncestor(w, 2) == hwnd
 
 
 def is_own_window(hwnd):
@@ -2544,6 +2545,8 @@ class App:
         self.panel = Panel(self)
         log("Panel created")
         threading.Thread(target=self._post_worker, daemon=True).start()
+        self._hwnd = get_hwnd(self.root)
+        threading.Thread(target=self._raise_on_click_worker, daemon=True).start()
         self.register_hotkeys()
         log(f"Hotkeys registered ({len(self.hotkey_errors)} errors)")
 
@@ -2662,15 +2665,9 @@ class App:
             fg = user32.GetForegroundWindow()
             if fg and not is_own_window(fg):
                 self.last_target = fg
-            if self.cfg["panel"]["no_focus"]:
-                # The window can't come to the front by being clicked (that's what
-                # keeps the game focused), so raise it ourselves when you click it.
-                down = mouse_down_on(self.root)
-                if down and not getattr(self, "_was_down", False):
-                    raise_quietly(self.root, self.cfg["panel"]["always_on_top"])
-                    log("Clicked KeyDeck: brought it to the front")
-                self._was_down = down
             self._poll_n = getattr(self, "_poll_n", 0) + 1
+            if self._poll_n % 33 == 1:
+                self._hwnd = get_hwnd(self.root)
             if self._poll_n % 33 == 0:  # about once a second
                 set_no_activate(self.root, self.cfg["panel"]["no_focus"])
         except Exception:
@@ -2740,6 +2737,22 @@ class App:
         if check_toggle and norm_hotkey(self.cfg["panel"].get("toggle_hotkey")) == n:
             return "the show/hide hotkey"
         return None
+
+    def _raise_on_click_worker(self):
+        """With "doesn't take focus" on, clicking KeyDeck can't bring it to the
+        front by itself, so this does it. Runs on its own thread because
+        dragging the title bar pauses the window's own event loop."""
+        was_down = False
+        while True:
+            try:
+                hwnd = self._hwnd  # looked up on the window's own thread
+                down = bool(hwnd) and self.cfg["panel"]["no_focus"] and mouse_down_on(hwnd)
+                if down and not was_down:
+                    raise_quietly(hwnd, self.cfg["panel"]["always_on_top"])
+                was_down = down
+            except Exception:
+                was_down = False
+            time.sleep(0.015)
 
     def _once_per_press(self, hk):
         """Holding a hotkey down repeats it; only act once until it's let go."""
