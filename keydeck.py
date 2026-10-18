@@ -2682,6 +2682,7 @@ class App:
         return None
 
     def _on_hotkey(self, b):
+        log(f"Hotkey {b.get('hotkey')} fired")
         now = time.time()
         if now - self._last_fire.get(b["hotkey"], 0) < 0.35:
             return
@@ -3437,6 +3438,9 @@ def focustest():
             return None
         CTRL, SHIFT = 0x11, 0x10
         res = {}
+        seen = []
+        keyboard.hook(lambda e: seen.append(f"{e.event_type}:{e.name}"))
+        log(f"FOCUSTEST hotkey errors: {app.hotkey_errors}")
         t0 = notepad_text(np)
         press(CTRL, SHIFT, 0x78)  # ctrl+alt+9: paste button
         time.sleep(2.0)
@@ -3457,6 +3461,7 @@ def focustest():
         time.sleep(2.0)
         res["page2_hotkey"] = notepad_text(np).count("otherpage321") > t3.count("otherpage321")
         res["kept_focus"] = user32.GetForegroundWindow() == np
+        log(f"FOCUSTEST key events seen: {len(seen)} {seen[:12]}")
         return res
 
     def worker():

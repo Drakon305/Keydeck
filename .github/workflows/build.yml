@@ -73,6 +73,7 @@ jobs:
           Stop-Process -Name notepad -ErrorAction SilentlyContinue
           $line = Select-String -Path "$env:APPDATA\KeyDeck\startup.log" -Pattern "FOCUSTEST" | Select-Object -Last 1
           Write-Host "::notice title=Focus test::$($line.Line)"
+          Select-String -Path "$env:APPDATA\KeyDeck\startup.log" -Pattern "FOCUSTEST|Hotkey|Post failed|Copied" | ForEach-Object { Write-Host "::notice title=Focus log::$($_.Line)" }
           if ($p.ExitCode -eq 1) { Get-Content "$env:APPDATA\KeyDeck\startup.log"; exit 1 }
 
       - name: Build KeyDeck.exe
