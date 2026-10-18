@@ -62,6 +62,16 @@ jobs:
           Get-Content "$env:APPDATA\KeyDeck\startup.log" -ErrorAction SilentlyContinue
           if ($code -ne 0) { exit 1 }
 
+      - name: Test that clicking KeyDeck keeps focus on the game
+        shell: pwsh
+        run: |
+          $env:APPDATA = Join-Path $env:RUNNER_TEMP "kdfocus"
+          New-Item -ItemType Directory -Force $env:APPDATA | Out-Null
+          $p = Start-Process -FilePath python -ArgumentList "keydeck.py --focustest" -Wait -PassThru -NoNewWindow
+          $line = Select-String -Path "$env:APPDATA\KeyDeck\startup.log" -Pattern "FOCUSTEST" | Select-Object -Last 1
+          Write-Host "::notice title=Focus test::$($line.Line)"
+          if ($p.ExitCode -eq 1) { Get-Content "$env:APPDATA\KeyDeck\startup.log"; exit 1 }
+
       - name: Build KeyDeck.exe
         run: >
           python -m PyInstaller --onefile --noconsole --noconfirm --clean

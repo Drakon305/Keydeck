@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.16.0"
+VERSION = "1.17.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -126,6 +126,7 @@ DEFAULT_CONFIG = {
         "font_size": 10,
         "show_hotkeys": True,
         "always_on_top": True,
+        "no_focus": True,  # clicking KeyDeck doesn't take focus away from your game
         "toggle_hotkey": "ctrl+alt+p",
         "beta": False,  # True = get test versions before everyone else
         "submitter": "",  # name shown on Library submissions
@@ -193,6 +194,7 @@ def load_config():
     num("font_size", 7, 24)
     p["show_hotkeys"] = bool(p["show_hotkeys"])
     p["always_on_top"] = bool(p["always_on_top"])
+    p["no_focus"] = bool(p.get("no_focus", True))
     p["beta"] = bool(p["beta"])
     try:
         p["slash_speed"] = max(0.5, min(3.0, float(p["slash_speed"])))
@@ -946,6 +948,36 @@ def get_hwnd(win):
     return user32.GetAncestor(win.winfo_id(), 2)  # GA_ROOT
 
 
+GWL_EXSTYLE = -20
+WS_EX_NOACTIVATE = 0x08000000
+WS_EX_APPWINDOW = 0x00040000
+try:
+    _GetWL = user32.GetWindowLongPtrW
+    _SetWL = user32.SetWindowLongPtrW
+except AttributeError:  # 32-bit Windows
+    _GetWL = user32.GetWindowLongW
+    _SetWL = user32.SetWindowLongW
+_GetWL.restype = ctypes.c_ssize_t
+_GetWL.argtypes = [ctypes.c_void_p, ctypes.c_int]
+_SetWL.restype = ctypes.c_ssize_t
+_SetWL.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_ssize_t]
+
+
+def set_no_activate(win, on):
+    """With on=True, clicking the window doesn't take focus away from the game
+    or app you were in (like the Windows on-screen keyboard). Keeps the
+    taskbar button. Returns True if the style had to be changed."""
+    hwnd = get_hwnd(win)
+    if not hwnd:
+        return False
+    ex = _GetWL(hwnd, GWL_EXSTYLE)
+    new = (ex | WS_EX_NOACTIVATE | WS_EX_APPWINDOW) if on else (ex & ~WS_EX_NOACTIVATE)
+    if new != ex:
+        _SetWL(hwnd, GWL_EXSTYLE, new)
+        return True
+    return False
+
+
 def is_own_window(hwnd):
     pid = ctypes.c_ulong()
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
@@ -1162,12 +1194,24 @@ class Panel:
         finally:
             m.grab_release()
 
+    def apply_no_focus(self):
+        try:
+            set_no_activate(self.win, self.app.cfg["panel"]["no_focus"])
+        except Exception:
+            log("no_focus failed:\n" + traceback.format_exc())
+
+    def _popup(self, m, e):
+        # right-click menus need KeyDeck focused to work (and close) properly
+        force_foreground(self.win)
+        self._popup(m, e)
+
     # build the button grid
     def rebuild(self):
         self._build_tabs()
         p = self.app.cfg["panel"]
         self.win.attributes("-alpha", p["opacity"])
         self.win.attributes("-topmost", p["always_on_top"])
+        self.apply_no_focus()
         for c in self.grid_frame.winfo_children():
             c.destroy()
         cols = p["columns"]
@@ -1262,10 +1306,7 @@ class Panel:
         m.add_command(label="Submit to Library…", command=lambda: self.app.submit_button(i))
         m.add_separator()
         m.add_command(label="Delete", command=lambda: self.app.delete_bind(i))
-        try:
-            m.tk_popup(e.x_root, e.y_root)
-        finally:
-            m.grab_release()
+        self._popup(m, e)
 
     def _make_add_tile(self, row, col):
         f, size = self._tile_frame(row, col, BG)
@@ -1623,6 +1664,10 @@ class SettingsWindow:
         ttk.Checkbutton(f, text="Keep KeyDeck on top of other windows", variable=self.on_top
                         ).grid(row=r, column=0, columnspan=2, sticky="w", pady=(6, 0))
         r += 1
+        self.no_focus = tk.BooleanVar(value=p["no_focus"])
+        ttk.Checkbutton(f, text="Clicking KeyDeck doesn't take focus from your game",
+                        variable=self.no_focus).grid(row=r, column=0, columnspan=2, sticky="w")
+        r += 1
         ttk.Label(f, text="Slash command speed").grid(row=r, column=0, sticky="w", padx=(0, 8))
         names = [n for n, _ in SLASH_SPEEDS]
         cur = min(SLASH_SPEEDS, key=lambda x: abs(x[1] - p["slash_speed"]))[0]
@@ -1763,6 +1808,7 @@ class SettingsWindow:
             show_hotkeys=self.show_hotkeys.get(),
             slash_speed=dict(SLASH_SPEEDS).get(self.slash_speed.get(), 1.0),
             always_on_top=self.on_top.get(),
+            no_focus=self.no_focus.get(),
             toggle_hotkey=hk,
         )
         p = self.app.cfg["panel"]
@@ -2565,6 +2611,9 @@ class App:
             fg = user32.GetForegroundWindow()
             if fg and not is_own_window(fg):
                 self.last_target = fg
+            self._poll_n = getattr(self, "_poll_n", 0) + 1
+            if self._poll_n % 33 == 0:  # about once a second
+                set_no_activate(self.root, self.cfg["panel"]["no_focus"])
         except Exception:
             pass
         self.root.after(30, self._poll)
@@ -3271,7 +3320,130 @@ def selftest():
     return 1 if problems else 0
 
 
+def focustest():
+    """Used by the automatic GitHub build: opens Notepad, clicks a KeyDeck
+    button with the real mouse, and checks Notepad never lost focus and got
+    the text. Exit code 0 = pass, 1 = fail, 2 = this PC can't run the test."""
+    import subprocess
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:
+        pass
+    user32.FindWindowW.restype = ctypes.c_void_p
+    user32.FindWindowExW.restype = ctypes.c_void_p
+    user32.FindWindowExW.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_wchar_p]
+    user32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
+    app = App()
+    app._updating = True  # no update prompts during the test
+    word = "focustest123"
+    pg = {"name": "Test", "id": new_page_id(),
+          "binds": [clean_bind({"label": "TEST", "text": word, "mode": "paste"})]}
+    app.cfg["pages"], app.cfg["current_page"] = [pg], 0
+    app.cfg["binds"] = pg["binds"]
+    app.cfg["panel"]["always_on_top"] = True
+
+    def finish(code, msg):
+        log(f"FOCUSTEST {msg}")
+        print(f"FOCUSTEST {msg}", flush=True)
+        if _log_file:
+            _log_file.flush()
+        os._exit(code)
+
+    def on_tk(fn):
+        q = queue.Queue()
+        app.ui(lambda: q.put(fn()))
+        return q.get(timeout=10)
+
+    def bring(hwnd):
+        fg = user32.GetForegroundWindow()
+        fg_tid = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+        me = kernel32.GetCurrentThreadId()
+        if fg_tid and fg_tid != me:
+            user32.AttachThreadInput(fg_tid, me, True)
+        user32.ShowWindow(hwnd, 5)
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+        if fg_tid and fg_tid != me:
+            user32.AttachThreadInput(fg_tid, me, False)
+
+    def notepad_text(np):
+        edit = user32.FindWindowExW(np, None, "Edit", None) or user32.FindWindowExW(np, None, "RichEditD2DPT", None)
+        buf = ctypes.create_unicode_buffer(1024)
+        user32.SendMessageW(edit, 0x000D, ctypes.c_void_p(1024), ctypes.cast(buf, ctypes.c_void_p))
+        return buf.value
+
+    def one_round(np, no_focus):
+        def prep():
+            app.cfg["panel"]["no_focus"] = no_focus
+            app.panel.rebuild()
+            app.root.update()
+            f = app.panel.grid_frame.winfo_children()[0]
+            return f.winfo_rootx() + f.winfo_width() // 2, f.winfo_rooty() + f.winfo_height() // 2
+        x, y = on_tk(prep)
+        time.sleep(0.5)
+        bring(np)
+        time.sleep(0.7)
+        if user32.GetForegroundWindow() != np:
+            return None
+        before = notepad_text(np)
+        lost = []
+        done = threading.Event()
+
+        def watch():
+            while not done.is_set():
+                fg = user32.GetForegroundWindow()
+                if fg != np:
+                    lost.append(fg)
+                time.sleep(0.005)
+        threading.Thread(target=watch, daemon=True).start()
+        user32.SetCursorPos(int(x), int(y))
+        time.sleep(0.2)
+        user32.mouse_event(0x0002, 0, 0, 0, 0)  # left down
+        time.sleep(0.05)
+        user32.mouse_event(0x0004, 0, 0, 0, 0)  # left up
+        time.sleep(2.5)
+        done.set()
+        after = notepad_text(np)
+        return {"lost_focus": bool(lost), "typed": after.count(word) > before.count(word)}
+
+    def worker():
+        proc = None
+        try:
+            time.sleep(2.0)
+            proc = subprocess.Popen(["notepad.exe"])
+            np = None
+            for _ in range(100):
+                np = user32.FindWindowW("Notepad", None)
+                if np:
+                    break
+                time.sleep(0.1)
+            if not np:
+                finish(2, "SKIP: Notepad didn't open")
+            time.sleep(1.0)
+            old = one_round(np, False)
+            new = one_round(np, True)
+            if old is None or new is None:
+                finish(2, f"SKIP: couldn't put Notepad in front (old={old} new={new})")
+            msg = f"old way: {old} | no-focus way: {new}"
+            if new["lost_focus"] or not new["typed"]:
+                finish(1, "FAIL " + msg)
+            finish(0, "OK " + msg)
+        except Exception:
+            finish(1, "FAIL crashed:\n" + traceback.format_exc())
+        finally:
+            try:
+                proc and proc.kill()
+            except Exception:
+                pass
+
+    threading.Thread(target=worker, daemon=True).start()
+    threading.Timer(60, lambda: finish(2, "SKIP: timed out")).start()
+    app.run()
+
+
 if __name__ == "__main__":
+    if "--focustest" in sys.argv:
+        focustest()
     if "--selftest" in sys.argv:
         code = selftest()
         if _log_file:

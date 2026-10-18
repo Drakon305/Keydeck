@@ -152,6 +152,7 @@ Click **📦 Library**. It shows every button people have shared as colored tile
 | Opacity | See-through window |
 | Show/hide hotkey | Default **Ctrl+Alt+P** |
 | Keep KeyDeck on top | Stays above other windows |
+| Clicking KeyDeck doesn't take focus from your game | On by default: clicking a button leaves your game/Discord focused, so it never minimizes or pauses. Right-click menus still focus KeyDeck. |
 | Slash command speed | How long slash-command buttons wait for Discord (Fast → Super slow) |
 | Show hotkeys on buttons | Small hotkey text on each button |
 | Start KeyDeck with Windows | Opens automatically when you log in |
@@ -176,6 +177,7 @@ KeyDeck checks for a new version a few seconds after it opens. If there is one, 
 | Text goes nowhere | Click into the text box first, then the KeyDeck button. |
 | Hotkey does nothing in a game | The game may run as admin: right-click KeyDeck → **Run as administrator**. |
 | App won't accept pasting | Set the button to **Type it out**. |
+| Game minimizes when you click KeyDeck | Run the game in **Borderless / Windowed** mode. True fullscreen games hide every other window. |
 | Can't find the window | Press **Ctrl+Alt+P**, or open KeyDeck again from the Desktop shortcut. |
 | Antivirus deleted it | Allow KeyDeck.exe in your antivirus, then download it again. |
 | Something crashed | The details are in `%APPDATA%\KeyDeck\startup.log` — send that file to Drakon. |

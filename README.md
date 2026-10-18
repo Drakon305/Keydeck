@@ -17,6 +17,7 @@ KeyDeck checks for updates when it opens and offers to install new versions itse
 ## Features
 
 - Grid of colored buttons, resizable window, always-on-top option
+- Clicking a button doesn't take focus away from your game (Settings to turn off)
 - **Pages** (tabs) to group buttons — right-click a tab to rename, move or delete it
 - Optional global hotkey per button (works on every page)
 - **Go-to-page buttons**: a button (or its hotkey) can jump straight to another page instead of posting text
