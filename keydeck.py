@@ -3337,12 +3337,12 @@ def focustest():
     app._updating = True  # no update prompts during the test
     word = "focustest123"
     pg2 = {"name": "Other", "id": new_page_id(),
-           "binds": [clean_bind({"label": "OTHER", "text": "otherpage321", "hotkey": "ctrl+alt+6"})]}
+           "binds": [clean_bind({"label": "OTHER", "text": "otherpage321", "hotkey": "ctrl+shift+f6"})]}
     pg = {"name": "Test", "id": new_page_id(),
           "binds": [clean_bind({"label": "TEST", "text": word, "mode": "paste"}),
-                    clean_bind({"label": "HK", "text": "hotkey456", "hotkey": "ctrl+alt+9"}),
-                    clean_bind({"label": "TYPED", "text": "typed789", "mode": "type", "hotkey": "ctrl+alt+8"}),
-                    clean_bind({"label": "GO", "action": "page", "goto": pg2["id"], "hotkey": "ctrl+alt+7"})]}
+                    clean_bind({"label": "HK", "text": "hotkey456", "hotkey": "ctrl+shift+f9"}),
+                    clean_bind({"label": "TYPED", "text": "typed789", "mode": "type", "hotkey": "ctrl+shift+f8"}),
+                    clean_bind({"label": "GO", "action": "page", "goto": pg2["id"], "hotkey": "ctrl+shift+f7"})]}
     app.cfg["pages"], app.cfg["current_page"] = [pg, pg2], 0
     app.cfg["binds"] = pg["binds"]
     app.cfg["panel"]["always_on_top"] = True
@@ -3418,7 +3418,9 @@ def focustest():
         after = notepad_text(np)
         return {"lost_focus": bool(lost), "typed": after.count(word) > before.count(word)}
 
-    def press(*vks):  # real key presses, like your keyboard sends
+    # (Alt combos can't be faked here: the keyboard library ignores injected
+    # keys while Alt is held, so the test uses Ctrl+Shift+F-keys.)
+    def press(*vks):  # key presses at the same level as a real keyboard
         for vk in vks:
             user32.keybd_event(vk, 0, 0, 0)
             time.sleep(0.03)
@@ -3433,25 +3435,25 @@ def focustest():
         time.sleep(0.7)
         if user32.GetForegroundWindow() != np:
             return None
-        CTRL, ALT = 0x11, 0x12
+        CTRL, SHIFT = 0x11, 0x10
         res = {}
         t0 = notepad_text(np)
-        press(CTRL, ALT, 0x39)  # ctrl+alt+9: paste button
+        press(CTRL, SHIFT, 0x78)  # ctrl+alt+9: paste button
         time.sleep(2.0)
         t1 = notepad_text(np)
         res["paste_hotkey"] = t1.count("hotkey456") > t0.count("hotkey456")
-        press(CTRL, ALT, 0x38)  # ctrl+alt+8: type-it-out button
+        press(CTRL, SHIFT, 0x77)  # ctrl+alt+8: type-it-out button
         time.sleep(2.5)
         t2 = notepad_text(np)
         res["typed_hotkey"] = t2.count("typed789") > t1.count("typed789")
-        press(CTRL, ALT, 0x37)  # ctrl+alt+7: go to page "Other"
+        press(CTRL, SHIFT, 0x76)  # ctrl+alt+7: go to page "Other"
         time.sleep(1.0)
         res["goto_page_hotkey"] = on_tk(lambda: app.cfg["current_page"]) == 1
-        press(CTRL, ALT, 0x39)  # page 1's hotkey while page 2 is showing
+        press(CTRL, SHIFT, 0x78)  # page 1's hotkey while page 2 is showing
         time.sleep(2.0)
         t3 = notepad_text(np)
         res["hotkey_from_other_page"] = t3.count("hotkey456") > t2.count("hotkey456")
-        press(CTRL, ALT, 0x36)  # ctrl+alt+6: button on page 2
+        press(CTRL, SHIFT, 0x75)  # ctrl+alt+6: button on page 2
         time.sleep(2.0)
         res["page2_hotkey"] = notepad_text(np).count("otherpage321") > t3.count("otherpage321")
         res["kept_focus"] = user32.GetForegroundWindow() == np
