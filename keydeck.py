@@ -3342,7 +3342,14 @@ def focustest():
     app.cfg["binds"] = pg["binds"]
     app.cfg["panel"]["always_on_top"] = True
 
+    procs = []
+
     def finish(code, msg):
+        for pr in procs:  # close Notepad first, or the build waits on it forever
+            try:
+                pr.kill()
+            except Exception:
+                pass
         log(f"FOCUSTEST {msg}")
         print(f"FOCUSTEST {msg}", flush=True)
         if _log_file:
@@ -3411,6 +3418,7 @@ def focustest():
         try:
             time.sleep(2.0)
             proc = subprocess.Popen(["notepad.exe"])
+            procs.append(proc)
             np = None
             for _ in range(100):
                 np = user32.FindWindowW("Notepad", None)
