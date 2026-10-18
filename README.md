@@ -22,7 +22,7 @@ KeyDeck checks for updates when it opens and offers to install new versions itse
 - **Go-to-page buttons**: a button (or its hotkey) can jump straight to another page instead of posting text
 - **Slash command buttons**: fill in `/reply` + options and KeyDeck types, picks and sends it (Settings → Slash command speed)
 - Right-click a button: Edit / Duplicate / Submit to Library / Delete
-- Paste, type-out, or copy-to-clipboard-only mode, optional auto-Enter
+- Paste, type-out, or copy-to-clipboard-only mode, optional Enter before and/or after
 - Text commands:
   - `{hello|hey|what's up}` — picks one at random each time
   - `{clipboard}` — whatever you last copied (e.g. `/tp {clipboard}`)

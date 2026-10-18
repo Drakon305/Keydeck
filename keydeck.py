@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.15.0"
+VERSION = "1.16.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -100,7 +100,7 @@ SWATCHES = ["#3a3d46", "#c0392b", "#d35400", "#f39c12", "#27ae60",
             "#16a085", "#2980b9", "#8e44ad", "#e84393", "#7f8c8d"]
 
 DEFAULT_BIND = {"label": "", "hotkey": "", "text": "", "mode": "paste",
-                "enter": False, "enabled": True, "color": TILE,
+                "enter": False, "enter_before": False, "enabled": True, "color": TILE,
                 "action": "text",  # "text" = post text, "page" = jump to another page
                 "goto": "",        # id of the page to jump to (for action "page")
                 # action "reply" = a Discord slash command filled in for you:
@@ -239,6 +239,7 @@ def clean_bind(b):
     if b["mode"] not in ("paste", "type", "copy"):
         b["mode"] = "paste"
     b["enter"] = bool(b["enter"])
+    b["enter_before"] = bool(b.get("enter_before"))
     b["enabled"] = bool(b["enabled"])
     if not isinstance(b.get("color"), str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", b["color"]):
         b["color"] = TILE
@@ -1425,6 +1426,9 @@ class BindEditor:
                         variable=self.mode, value="type").pack(anchor="w")
         ttk.Radiobutton(opts, text="Copy it to the clipboard only (types nothing - e.g. a SteamID)",
                         variable=self.mode, value="copy").pack(anchor="w")
+        self.enter_before = tk.BooleanVar(value=bool(b.get("enter_before")))
+        ttk.Checkbutton(opts, text="Press Enter before (opens game chat first)",
+                        variable=self.enter_before).pack(anchor="w")
         self.enter = tk.BooleanVar(value=b["enter"])
         ttk.Checkbutton(opts, text="Press Enter after (auto-send in chats)",
                         variable=self.enter).pack(anchor="w")
@@ -1528,6 +1532,7 @@ class BindEditor:
             return
         data = {"label": self.label.get().strip(), "hotkey": hk, "text": text,
                 "mode": self.mode.get(), "enter": self.enter.get(),
+                "enter_before": self.enter_before.get(),
                 "enabled": self.enabled.get(), "color": self.color,
                 "action": action, "goto": goto, **self._slash_data()}
         cur = self.app.cfg["current_page"]
@@ -1833,10 +1838,12 @@ class LibraryItemEditor:
         opts.grid(row=4, column=1, sticky="w", pady=(8, 0))
         self.mode = tk.StringVar(value=b["mode"])
         self.enter = tk.BooleanVar(value=b["enter"])
+        self.enter_before = tk.BooleanVar(value=bool(b.get("enter_before")))
         if self.action != "reply":
             ttk.Radiobutton(opts, text="Paste it", variable=self.mode, value="paste").pack(anchor="w")
             ttk.Radiobutton(opts, text="Type it out", variable=self.mode, value="type").pack(anchor="w")
             ttk.Radiobutton(opts, text="Copy to clipboard only", variable=self.mode, value="copy").pack(anchor="w")
+            ttk.Checkbutton(opts, text="Press Enter before", variable=self.enter_before).pack(anchor="w")
             ttk.Checkbutton(opts, text="Press Enter after", variable=self.enter).pack(anchor="w")
         bb = ttk.Frame(f)
         bb.grid(row=5, column=0, columnspan=2, sticky="e", pady=(12, 0))
@@ -1852,7 +1859,7 @@ class LibraryItemEditor:
     def save(self):
         nb = dict(self.it["bind"])
         nb.update(label=self.label.get().strip(), color=self.color, mode=self.mode.get(),
-                  enter=self.enter.get(), hotkey="")
+                  enter=self.enter.get(), enter_before=self.enter_before.get(), hotkey="")
         if self.action == "reply":
             nb.update(cmd=self.cmd.get().strip() or "/reply",
                       **{f"opt{n + 1}": v.get().strip() for n, v in enumerate(self.opts)})
@@ -2656,6 +2663,9 @@ class App:
                 is_slash = b.get("action") == "reply"
                 steps = (slash_plan(b, self.cfg["panel"]["slash_speed"]) if is_slash
                          else plan_text(b["text"]))
+                if b.get("enter_before") and not is_slash:  # e.g. open Rust chat first
+                    keyboard.send("enter")
+                    time.sleep(0.25)
                 for step in steps:
                     if step[0] == "text":
                         if is_slash or b.get("mode") == "type":  # slash commands must be typed
@@ -3194,6 +3204,7 @@ def selftest():
                                                              ("key", "f1")]
         assert plan_text("{key ctrl+v}") == [("key", "ctrl+v")]
         assert clean_bind({"mode": "copy"})["mode"] == "copy"
+        assert clean_bind({})["enter_before"] is False and clean_bind({"enter_before": 1})["enter_before"] is True
         keyboard.parse_hotkey("windows+d")
     except Exception:
         problems.append("backup/share: " + traceback.format_exc())
