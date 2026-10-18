@@ -978,6 +978,16 @@ def set_no_activate(win, on):
     return False
 
 
+user32.SetWindowPos.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
+                                ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+
+
+def set_topmost_quietly(win, on):
+    """Stay on top / stop staying on top without grabbing focus from the game."""
+    user32.SetWindowPos(get_hwnd(win), ctypes.c_void_p(-1 if on else -2), 0, 0, 0, 0,
+                        0x0001 | 0x0002 | 0x0010)  # NOSIZE | NOMOVE | NOACTIVATE
+
+
 def is_own_window(hwnd):
     pid = ctypes.c_ulong()
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
@@ -1210,8 +1220,12 @@ class Panel:
         self._build_tabs()
         p = self.app.cfg["panel"]
         self.win.attributes("-alpha", p["opacity"])
-        self.win.attributes("-topmost", p["always_on_top"])
-        self.apply_no_focus()
+        if p["no_focus"]:
+            self.apply_no_focus()
+            set_topmost_quietly(self.win, p["always_on_top"])
+        else:
+            self.apply_no_focus()
+            self.win.attributes("-topmost", p["always_on_top"])
         for c in self.grid_frame.winfo_children():
             c.destroy()
         cols = p["columns"]
@@ -1338,6 +1352,15 @@ class Panel:
         return self.win.state() == "normal"
 
     def show(self):
+        p = self.app.cfg["panel"]
+        if p["no_focus"]:  # bring it up without taking focus from the game
+            hwnd = get_hwnd(self.win)
+            if self.win.state() != "normal":
+                user32.ShowWindow(hwnd, 4)  # SW_SHOWNOACTIVATE
+            set_topmost_quietly(self.win, True)
+            if not p["always_on_top"]:
+                self.win.after(200, lambda: set_topmost_quietly(self.win, False))
+            return
         self.win.deiconify()
         self.win.lift()
         self.win.attributes("-topmost", True)
