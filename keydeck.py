@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.17.0"
+VERSION = "1.17.1"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -2483,7 +2483,7 @@ class App:
         self.ui_queue = queue.Queue()
         self.post_queue = queue.Queue()
         self.hotkey_errors = []
-        self._last_fire = {}
+        self._held = {}  # hotkeys currently held down
         self.settings = None
         self.editor = None
         self.library = None
@@ -2629,15 +2629,16 @@ class App:
             if not (b.get("enabled", True) and b.get("hotkey")):
                 continue
             try:
-                keyboard.add_hotkey(b["hotkey"], self._on_hotkey, args=(dict(b),),
-                                    suppress=False, trigger_on_release=True)
+                # Fires on key-down. (trigger_on_release never fires in the keyboard
+                # library without suppress: the released key is already gone from
+                # its pressed-keys list when the hotkey is looked up.)
+                keyboard.add_hotkey(b["hotkey"], self._on_hotkey, args=(dict(b),), suppress=False)
             except Exception as e:
                 self.hotkey_errors.append(f'{b.get("label") or b["hotkey"]}: {e}')
         thk = self.cfg["panel"].get("toggle_hotkey")
         if thk:
             try:
-                keyboard.add_hotkey(thk, lambda: self.ui(self.panel.toggle),
-                                    suppress=False, trigger_on_release=True)
+                keyboard.add_hotkey(thk, self._on_toggle_hotkey, suppress=False)
             except Exception as e:
                 self.hotkey_errors.append(f"Show/hide: {e}")
         for e in self.hotkey_errors:
@@ -2681,12 +2682,33 @@ class App:
             return "the show/hide hotkey"
         return None
 
+    def _once_per_press(self, hk):
+        """Holding a hotkey down repeats it; only act once until it's let go."""
+        if self._held.get(hk):
+            return False
+        self._held[hk] = True
+
+        def wait_release():
+            end = time.time() + 30
+            while time.time() < end:
+                try:
+                    if not keyboard.is_pressed(hk):
+                        break
+                except Exception:
+                    break
+                time.sleep(0.02)
+            self._held[hk] = False
+        threading.Thread(target=wait_release, daemon=True).start()
+        return True
+
+    def _on_toggle_hotkey(self):
+        if self._once_per_press(self.cfg["panel"].get("toggle_hotkey") or "toggle"):
+            self.ui(self.panel.toggle)
+
     def _on_hotkey(self, b):
-        log(f"Hotkey {b.get('hotkey')} fired")
-        now = time.time()
-        if now - self._last_fire.get(b["hotkey"], 0) < 0.35:
+        if not self._once_per_press(b["hotkey"]):
             return
-        self._last_fire[b["hotkey"]] = now
+        log(f"Hotkey {b.get('hotkey')} fired")
         if b.get("action") == "page":
             self.ui(self.goto_page, b.get("goto"), True)
             return
@@ -3446,7 +3468,7 @@ def focustest():
         press(CTRL, SHIFT, 0x78)  # ctrl+alt+9: paste button
         time.sleep(2.0)
         t1 = notepad_text(np)
-        res["paste_hotkey"] = t1.count("hotkey456") > t0.count("hotkey456")
+        res["paste_hotkey"] = t1.count("hotkey456") == t0.count("hotkey456") + 1  # exactly once
         press(CTRL, SHIFT, 0x77)  # ctrl+alt+8: type-it-out button
         time.sleep(2.5)
         t2 = notepad_text(np)
