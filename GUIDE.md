@@ -49,6 +49,7 @@ Click **+ Add** (or right-click an existing button). In the editor:
   - **Slash command** – fills in a Discord command like `/reply` for you (see "Discord slash commands" below).
   - **Go to page:** – the button jumps to another page instead (section 5).
 - **Paste it** (fast, works almost everywhere) or **Type it out** (needed for Discord slash commands and apps that block pasting).
+- **Copy it to the clipboard only** – types nothing, just puts the text on your clipboard (e.g. a "MY STEAMID" button, so `{clipboard}` buttons can use it).
 - **Press Enter after** – sends the message automatically.
 - **Enabled** – untick to switch a button off without deleting it.
 - **Delete / Duplicate / ◀ Move / Move ▶** – remove, copy, or reorder the button.

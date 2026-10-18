@@ -25,7 +25,7 @@ import traceback
 APP_NAME = "KeyDeck"
 # Bump this for every release. GitHub builds and publishes a new KeyDeck.exe
 # whenever this number changes, and running copies offer to update to it.
-VERSION = "1.14.0"
+VERSION = "1.15.0"
 GITHUB_REPO = "Drakon305/Keydeck"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -236,7 +236,7 @@ def clean_bind(b):
     for k in ("label", "hotkey", "text", "goto", "cmd", "opt1", "opt2", "opt3"):
         if not isinstance(b.get(k), str):
             b[k] = ""
-    if b["mode"] not in ("paste", "type"):
+    if b["mode"] not in ("paste", "type", "copy"):
         b["mode"] = "paste"
     b["enter"] = bool(b["enter"])
     b["enabled"] = bool(b["enabled"])
@@ -1232,6 +1232,8 @@ class Panel:
             sub.append("→ " + (target["name"] if target else "missing page"))
         elif b.get("action") == "reply":
             sub.append((b.get("cmd") or "/reply").strip())
+        elif b.get("mode") == "copy":
+            sub.append("📋 copy")
         if p["show_hotkeys"] and b["hotkey"]:
             sub.append(pretty_hotkey(b["hotkey"]))
         if sub:
@@ -1421,6 +1423,8 @@ class BindEditor:
                         variable=self.mode, value="paste").pack(anchor="w")
         ttk.Radiobutton(opts, text="Type it out (for apps that block pasting)",
                         variable=self.mode, value="type").pack(anchor="w")
+        ttk.Radiobutton(opts, text="Copy it to the clipboard only (types nothing - e.g. a SteamID)",
+                        variable=self.mode, value="copy").pack(anchor="w")
         self.enter = tk.BooleanVar(value=b["enter"])
         ttk.Checkbutton(opts, text="Press Enter after (auto-send in chats)",
                         variable=self.enter).pack(anchor="w")
@@ -1832,6 +1836,7 @@ class LibraryItemEditor:
         if self.action != "reply":
             ttk.Radiobutton(opts, text="Paste it", variable=self.mode, value="paste").pack(anchor="w")
             ttk.Radiobutton(opts, text="Type it out", variable=self.mode, value="type").pack(anchor="w")
+            ttk.Radiobutton(opts, text="Copy to clipboard only", variable=self.mode, value="copy").pack(anchor="w")
             ttk.Checkbutton(opts, text="Press Enter after", variable=self.enter).pack(anchor="w")
         bb = ttk.Frame(f)
         bb.grid(row=5, column=0, columnspan=2, sticky="e", pady=(12, 0))
@@ -2638,6 +2643,12 @@ class App:
         while True:
             b, from_click = self.post_queue.get()
             try:
+                if b.get("mode") == "copy" and b.get("action") == "text":
+                    # just put the text on the clipboard, for {clipboard} buttons to use
+                    text = "".join(st[1] for st in plan_text(b["text"]) if st[0] == "text").strip()
+                    pyperclip.copy(text)
+                    log(f"Copied to clipboard: {text[:40]!r}")
+                    continue
                 if from_click and not self._restore_target():
                     log("No window to type into yet; click into a text box first.")
                     continue
@@ -3182,6 +3193,7 @@ def selftest():
         assert plan_text("{key F1}vanish{enter}{key f1}") == [("key", "f1"), ("text", "vanish"), ("enter",),
                                                              ("key", "f1")]
         assert plan_text("{key ctrl+v}") == [("key", "ctrl+v")]
+        assert clean_bind({"mode": "copy"})["mode"] == "copy"
         keyboard.parse_hotkey("windows+d")
     except Exception:
         problems.append("backup/share: " + traceback.format_exc())

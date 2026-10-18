@@ -1,6 +1,6 @@
 {
   "keydeck_export": 1,
-  "app_version": "1.14.0",
+  "app_version": "1.15.0",
   "pages": [
     {
       "name": "Rust - Staff chat commands",
@@ -74,6 +74,21 @@
           "enter": false,
           "enabled": true,
           "color": "#16a085",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "RADAR",
+          "hotkey": "",
+          "text": "{enter}/radar{enter}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#2980b9",
           "action": "text",
           "goto": "",
           "cmd": "/reply",

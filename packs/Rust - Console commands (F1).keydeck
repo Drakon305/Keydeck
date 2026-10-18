@@ -1,6 +1,6 @@
 {
   "keydeck_export": 1,
-  "app_version": "1.14.0",
+  "app_version": "1.15.0",
   "pages": [
     {
       "name": "Rust - Console commands (F1)",
@@ -74,6 +74,36 @@
           "enter": false,
           "enabled": true,
           "color": "#c0392b",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "GOD ON",
+          "hotkey": "",
+          "text": "{key f1}GOD 1{enter}{key f1}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#27ae60",
+          "action": "text",
+          "goto": "",
+          "cmd": "/reply",
+          "opt1": "",
+          "opt2": "",
+          "opt3": ""
+        },
+        {
+          "label": "GOD OFF",
+          "hotkey": "",
+          "text": "{key f1}GOD 0{enter}{key f1}",
+          "mode": "type",
+          "enter": false,
+          "enabled": true,
+          "color": "#7f8c8d",
           "action": "text",
           "goto": "",
           "cmd": "/reply",
